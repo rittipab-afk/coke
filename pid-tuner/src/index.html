@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PID Loop Tuner</title>
+<meta name="description" content="วิเคราะห์ loop และแนะนำค่า PB/TI/TD จากข้อมูล PI (ทำงาน offline ในเครื่อง)">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #6f6d68;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.12);
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --sel: rgba(42, 120, 214, 0.12);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --ref: #52514e;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --good-ink: #006300;
+  --warn-bg: #fff6e0;
+  --warn-border: #f0c96a;
+  --bad-bg: #fdeceb;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #a3a198;
+    --grid: #2c2c2a;
+    --axis: #4a4a46;
+    --border: rgba(255, 255, 255, 0.12);
+    --accent: #3987e5;
+    --sel: rgba(57, 135, 229, 0.20);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --ref: #c3c2b7;
+    --good-ink: #0ca30c;
+    --warn-bg: #2d2511;
+    --warn-border: #6b5518;
+    --bad-bg: #2e1616;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #232321;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #a3a198;
+  --grid: #2c2c2a;
+  --axis: #4a4a46;
+  --border: rgba(255, 255, 255, 0.12);
+  --accent: #3987e5;
+  --sel: rgba(57, 135, 229, 0.20);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --ref: #c3c2b7;
+  --good-ink: #0ca30c;
+  --warn-bg: #2d2511;
+  --warn-border: #6b5518;
+  --bad-bg: #2e1616;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
+header.top { display: flex; align-items: center; gap: 12px; padding: 18px 0 10px; flex-wrap: wrap; }
+header.top h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+header.top .sub { color: var(--text-secondary); font-size: 13px; }
+header.top .spacer { flex: 1; }
+.btn {
+  appearance: none; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; line-height: 1.2;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn[aria-pressed="true"] { background: var(--sel); border-color: var(--accent); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.banner {
+  border: 1px solid var(--warn-border); background: var(--warn-bg); border-radius: 10px;
+  padding: 10px 14px; margin: 6px 0 14px; font-size: 13px;
+}
+.banner.bad { border-color: var(--critical); background: var(--bad-bg); }
+nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
+nav.tabs button {
+  appearance: none; border: 0; background: none; color: var(--text-secondary); font: inherit; font-weight: 600;
+  padding: 10px 12px; border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap;
+}
+nav.tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--accent); }
+nav.tabs button:disabled { opacity: .4; cursor: not-allowed; }
+nav.tabs .n { display: inline-block; min-width: 20px; height: 20px; border-radius: 10px; background: var(--surface-2); text-align: center; font-size: 12px; line-height: 20px; margin-right: 6px; }
+section.tab[hidden] { display: none; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); min-width: 0; }
+.card h2 { font-size: 15px; margin: 0 0 10px; }
+.card h3 { font-size: 14px; margin: 14px 0 8px; }
+.hint { color: var(--text-secondary); font-size: 13px; }
+.muted { color: var(--text-muted); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.grid2 > .card { margin-bottom: 0; }
+.stack > * + * { margin-top: 16px; }
+.form { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 12px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); min-width: 0; }
+.form label.wide { grid-column: 1 / -1; }
+input, select, textarea {
+  font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 7px; padding: 6px 8px; min-width: 0; width: 100%;
+}
+input[type="range"] { padding: 0; accent-color: var(--accent); }
+input[type="checkbox"] { width: auto; }
+textarea { min-height: 90px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.drop {
+  border: 1.5px dashed var(--axis); border-radius: 10px; padding: 18px; text-align: center; color: var(--text-secondary);
+  cursor: pointer;
+}
+.drop.over { border-color: var(--accent); background: var(--sel); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pill { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-secondary); }
+.pill.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--text-primary); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+.kv dt { color: var(--text-secondary); }
+.kv dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* charts */
+.chart { position: relative; width: 100%; user-select: none; touch-action: pan-y; }
+.chart canvas { display: block; cursor: crosshair; }
+.chart-tip {
+  position: absolute; pointer-events: none; z-index: 5; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); min-width: 140px;
+}
+.tip-head { color: var(--text-secondary); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.tip-row { display: flex; align-items: center; gap: 6px; }
+.tip-row b { margin-left: auto; padding-left: 10px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.key { display: inline-block; width: 14px; height: 3px; border-radius: 2px; flex: none; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); margin: 2px 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .key.dash { background: none !important; height: 0; border-top: 2px dashed; }
+.legend .key.thin { height: 1px; }
+.chart-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+
+/* status list */
+.status-list { display: grid; gap: 8px; }
+.status {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface-1);
+}
+.status .ico {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px;
+}
+.status.good .ico { background: var(--good); }
+.status.warn .ico { background: var(--warning); color: #0b0b0b; }
+.status.bad .ico { background: var(--critical); }
+.status.na .ico { background: var(--axis); color: var(--text-primary); }
+.status .head { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.status .head b { font-weight: 600; }
+.status .head .val { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.status .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+.status p { margin: 2px 0 0; color: var(--text-secondary); font-size: 13px; }
+
+table.data { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.data th, table.data td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; }
+table.data th:first-child, table.data td:first-child { text-align: left; }
+table.data thead th { color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+table.data td.hl { font-weight: 700; }
+#fitOut table.data td:first-child { white-space: nowrap; }
+.scroll-x { overflow-x: auto; }
+.notes { margin: 8px 0 0; padding-left: 18px; }
+.notes li { margin: 3px 0; }
+.big { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.centum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.centum div { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.centum small { color: var(--text-secondary); display: block; }
+.slider-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; align-items: center; }
+details summary { cursor: pointer; color: var(--text-secondary); }
+footer { color: var(--text-muted); font-size: 12px; margin-top: 24px; }
+footer ul { padding-left: 18px; }
+.report h1 { font-size: 20px; margin: 0 0 4px; }
+.report h2 { font-size: 15px; margin: 18px 0 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.empty { color: var(--text-secondary); padding: 18px; text-align: center; }
+@media (max-width: 600px) {
+  .centum { grid-template-columns: 1fr; }
+  .slider-row { grid-template-columns: 1fr; }
+  header.top h1 { font-size: 18px; }
+}
+@media print {
+  body { background: #fff; color: #000; }
+  header.top .btn, nav.tabs, .banner.screen-only, footer, .no-print, section.tab:not(#tab-report) { display: none !important; }
+  section#tab-report { display: block !important; }
+  .card { box-shadow: none; border: 0; padding: 0; }
+  .wrap { max-width: none; padding: 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>PID Loop Tuner</h1>
+      <div class="sub">วิเคราะห์ loop และแนะนำค่า PB / TI / TD จากข้อมูล PI · ทำงาน offline ในเครื่องนี้ ข้อมูลไม่ถูกส่งออก</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn small" id="themeBtn" type="button" title="สลับธีม">ธีม: อัตโนมัติ</button>
+  </header>
+
+  <div class="banner screen-only">
+    <b>เครื่องมือช่วยวิเคราะห์เท่านั้น</b> ค่าที่แนะนำต้องผ่านการตรวจโดย control engineer และขั้นตอน MOC ก่อนเปลี่ยนใน DCS
+    ควรเปลี่ยนทีละขั้นและเฝ้าดู loop หลังเปลี่ยนเสมอ
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="data" aria-selected="true"><span class="n">1</span>ข้อมูล</button>
+    <button role="tab" data-tab="health" disabled><span class="n">2</span>Loop Health</button>
+    <button role="tab" data-tab="model" disabled><span class="n">3</span>Step test → Model</button>
+    <button role="tab" data-tab="tune" disabled><span class="n">4</span>Tuning</button>
+    <button role="tab" data-tab="report" disabled><span class="n">5</span>Report</button>
+  </nav>
+
+  <!-- 1. DATA -->
+  <section class="tab" id="tab-data">
+    <div class="grid2">
+      <div class="card">
+        <h2>นำเข้าข้อมูลจาก PI</h2>
+        <div class="drop" id="drop" tabindex="0">
+          <b>ลากไฟล์ CSV มาวาง</b> หรือคลิกเพื่อเลือกไฟล์<br>
+          <span class="hint">export จาก PI DataLink → Sampled Data (interval คงที่) คอลัมน์ Timestamp, PV, SV, MV, MODE</span>
+          <input type="file" id="file" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden>
+        </div>
+        <h3>หรือ paste จาก Excel</h3>
+        <textarea id="paste" placeholder="copy ช่วงข้อมูลใน Excel (รวมแถวหัวตาราง) แล้ว paste ที่นี่"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" id="pasteBtn" type="button">ใช้ข้อมูลที่ paste</button>
+          <span class="spacer"></span>
+          <select id="sampleSel" aria-label="ข้อมูลตัวอย่าง" style="width:auto;flex:1;min-width:180px"></select>
+          <button class="btn" id="sampleBtn" type="button">โหลดตัวอย่าง</button>
+        </div>
+        <p class="hint" id="loadMsg"></p>
+      </div>
+
+      <div class="card" id="mapCard" hidden>
+        <h2>จับคู่ column</h2>
+        <div class="form">
+          <label>Timestamp<select id="colTime"></select></label>
+          <label>PV<select id="colPV"></select></label>
+          <label>SP / SV<select id="colSP"></select></label>
+          <label>OP / MV (%)<select id="colOP"></select></label>
+          <label>MODE (ถ้ามี)<select id="colMode"></select></label>
+          <label>รูปแบบวันที่<select id="dateOrder"><option value="DMY">วัน/เดือน/ปี</option><option value="MDY">เดือน/วัน/ปี</option></select></label>
+        </div>
+        <dl class="kv" id="dataInfo" style="margin-top:12px"></dl>
+        <div id="dataWarn"></div>
+      </div>
+    </div>
+
+    <div class="card" id="cfgCard" hidden style="margin-top:16px">
+      <h2>ตั้งค่า loop</h2>
+      <div class="form">
+        <label>Tag<input id="cfgTag" placeholder="FIC101"></label>
+        <label>ชนิด loop
+          <select id="cfgType">
+            <option value="flow">Flow</option><option value="pressure">Pressure</option>
+            <option value="temperature">Temperature</option><option value="level">Level</option>
+          </select>
+        </label>
+        <label>PV range ต่ำ (SL)<input id="cfgSL" type="number" step="any"></label>
+        <label>PV range สูง (SH)<input id="cfgSH" type="number" step="any"></label>
+        <label>หน่วย PV<input id="cfgUnit" placeholder="m3/h"></label>
+        <label>PB ปัจจุบัน (%)<input id="cfgPB" type="number" step="any" min="0" placeholder="เช่น 150"></label>
+        <label>TI ปัจจุบัน (s)<input id="cfgTI" type="number" step="any" min="0" placeholder="0 = ไม่มี I"></label>
+        <label>TD ปัจจุบัน (s)<input id="cfgTD" type="number" step="any" min="0" placeholder="0"></label>
+        <label>Control period (s)<input id="cfgTs" type="number" step="any" min="0.05" value="1"></label>
+        <label>Algorithm
+          <select id="cfgAlg">
+            <option value="pid">Basic PID</option>
+            <option value="i-pd">I-PD (P, D บน PV)</option>
+            <option value="pi-d">PI-D (D บน PV)</option>
+          </select>
+        </label>
+        <label>Control action
+          <select id="cfgAct"><option value="">ไม่ระบุ</option><option value="rev">Reverse</option><option value="dir">Direct</option></select>
+        </label>
+      </div>
+      <p class="hint" id="cfgHint"></p>
+    </div>
+
+    <div class="card" id="overviewCard" hidden>
+      <div class="chart-tools">
+        <h2 style="margin:0">ภาพรวมข้อมูล</h2>
+        <span class="spacer" style="flex:1"></span>
+        <span class="hint">ลากเพื่อ zoom · ดับเบิลคลิกเพื่อรีเซ็ต</span>
+      </div>
+      <div class="legend" id="ovLegend"></div>
+      <div id="ovChart"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" type="button" data-goto="health">ถัดไป: Loop Health →</button>
+        <button class="btn" type="button" data-goto="model">ไป Step test → Model</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. HEALTH -->
+  <section class="tab" id="tab-health" hidden>
+    <div class="card">
+      <div class="chart-tools">
+        <h2 style="margin:0">ช่วงที่วิเคราะห์</h2>
+        <span class="spacer" style="flex:1"></span>
+        <span class="hint" id="hRangeLabel"></span>
+        <button class="btn small" type="button" id="hAll">ใช้ข้อมูลทั้งหมด</button>
+      </div>
+      <p class="hint" style="margin:0 0 6px">ลากบนกราฟเพื่อเลือกช่วง operation ปกติที่ต้องการวิเคราะห์ (ไม่ต้องมี step test)</p>
+      <div class="legend" id="hLegend"></div>
+      <div id="hChart"></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>ผลการตรวจ</h2>
+        <div class="status-list" id="hList"></div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <h2>OP vs PV</h2>
+          <p class="hint" style="margin-top:0">ถ้าเส้นเป็นรูปสี่เหลี่ยมด้านขนาน (OP ขยับแต่ PV ไม่ขยับ แล้วกระโดด) เป็นลักษณะของ valve stiction ถ้าเป็นวงรีเรียบๆ มักมาจาก tuning หรือ disturbance</p>
+          <div id="xyChart"></div>
+        </div>
+        <div class="card" id="ccfCard" hidden>
+          <h2>Cross-correlation OP ↔ PV</h2>
+          <p class="hint" style="margin-top:0">Horch test: ถ้ากราฟสมมาตรรอบ lag 0 (even) = ไม่ใช่ stiction ถ้าเป็น odd (ค่าที่ lag 0 ≈ 0 และสองฝั่งกลับเครื่องหมาย) = สงสัย stiction</p>
+          <div id="ccfChart"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. MODEL -->
+  <section class="tab" id="tab-model" hidden>
+    <div class="card">
+      <div class="chart-tools">
+        <h2 style="margin:0">เลือกช่วง step test</h2>
+        <span class="spacer" style="flex:1"></span>
+        <label class="hint row" style="gap:6px">Model
+          <select id="mType" style="width:auto">
+            <option value="auto">อัตโนมัติตามชนิด loop</option>
+            <option value="fopdt">FOPDT (self-regulating)</option>
+            <option value="integrating">Integrating (level)</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint" style="margin:0 0 6px">ลากบนกราฟเพื่อเลือกช่วงที่ loop อยู่ใน MAN และมีการ step OP (ครอบคลุมตั้งแต่ก่อน step จน PV นิ่ง หรือหลาย step ก็ได้)</p>
+      <div class="row" id="stepList" style="margin-bottom:8px"></div>
+      <div class="legend" id="mLegend"></div>
+      <div id="mChart"></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>ผล model fit</h2>
+        <div id="fitOut"><div class="empty">ยังไม่ได้เลือกช่วงข้อมูล</div></div>
+      </div>
+      <div class="card">
+        <h2>ปรับหรือกรอก model เอง</h2>
+        <p class="hint" style="margin-top:0">ใช้เมื่อได้ model จาก engineer หรืออยากลองปรับค่า หน่วยเป็น %span และ %OP</p>
+        <div class="form" id="manualForm"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="btn" type="button" id="manualBtn">ใช้ค่าที่กรอก</button>
+          <button class="btn primary" type="button" data-goto="tune">ถัดไป: Tuning →</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>เปรียบเทียบ model กับข้อมูลจริง</h2>
+      <div class="legend" id="fitLegend"></div>
+      <div id="fitChart"><div class="empty">—</div></div>
+    </div>
+  </section>
+
+  <!-- 4. TUNING -->
+  <section class="tab" id="tab-tune" hidden>
+    <div id="tuneBanner"></div>
+    <div class="grid2">
+      <div class="card">
+        <h2>วิธีคำนวณ</h2>
+        <div class="form">
+          <label class="wide">Tuning rule<select id="tMethod"></select></label>
+        </div>
+        <p class="hint" id="tMethodNote"></p>
+        <label class="hint" for="tLam" id="tLamLabel">λ</label>
+        <div class="slider-row">
+          <input type="range" id="tLam" min="0" max="1000" step="1">
+          <input type="number" id="tLamNum" step="any" min="0" aria-label="λ (วินาที)">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn small" type="button" data-preset="2">นุ่มนวล</button>
+          <button class="btn small" type="button" data-preset="1">ปกติ</button>
+          <button class="btn small" type="button" data-preset="0.5">เร็ว</button>
+          <span class="hint" id="tLamRatio"></span>
+        </div>
+        <h3>จำลอง</h3>
+        <div class="form">
+          <label>SP step (%span)<input id="sSp" type="number" step="any" value="5"></label>
+          <label>Load disturbance (%OP)<input id="sDist" type="number" step="any" value="5"></label>
+          <label>OP operating point (%)<input id="sU0" type="number" step="any"></label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>ค่าที่แนะนำ (หน่วย CENTUM)</h2>
+        <div class="centum" id="tOut"></div>
+        <div id="tDirection" class="hint" style="margin-top:10px"></div>
+        <ul class="notes" id="tNotes"></ul>
+      </div>
+    </div>
+    <div class="card">
+      <h2>เปรียบเทียบค่าปัจจุบันกับค่าที่แนะนำ</h2>
+      <div class="scroll-x"><table class="data" id="tTable"></table></div>
+      <p class="hint">GM = gain margin (ควร ≥ 2) · PM = phase margin (ควร ≥ 45°) · Ms = max sensitivity (ควร ≤ 1.7, เกิน 2 = เสี่ยง) · คำนวณจาก model จึงแม่นเท่าที่ model แม่น</p>
+    </div>
+    <div class="card">
+      <h2>Closed-loop simulation</h2>
+      <p class="hint" style="margin-top:0">ครึ่งแรก: SP step · ครึ่งหลัง: load disturbance ที่ input ของ process · เส้นจางคือค่าที่แนะนำเมื่อ gain และ dead time จริงมากกว่า model 30% (ทดสอบความทนทาน)</p>
+      <div class="legend" id="simLegend"></div>
+      <div id="simChart"></div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" type="button" data-goto="report">ถัดไป: Report →</button></div>
+    </div>
+  </section>
+
+  <!-- 5. REPORT -->
+  <section class="tab" id="tab-report" hidden>
+    <div class="row no-print" style="margin-bottom:12px">
+      <button class="btn primary" type="button" id="printBtn">พิมพ์ / Save as PDF</button>
+      <button class="btn" type="button" id="copyBtn">Copy สรุปเป็นข้อความ</button>
+      <label class="hint row" style="gap:6px"><input type="checkbox" id="hideTag"> ซ่อนชื่อ tag</label>
+      <span class="hint" id="copyMsg"></span>
+    </div>
+    <div class="card report" id="reportBody"></div>
+  </section>
+
+  <footer>
+    <b>สมมติฐานที่ต้อง verify กับ manual CENTUM หรือ control engineer</b>
+    <ul>
+      <li>คำนวณแบบ ideal (non-interacting) PID: MV = (100/PB)·[e + (1/TI)∫e dt + TD·de/dt] โดย e เป็น %span ของ PV และ MV เป็น % ถ้า MV ไม่ใช่ 0–100% (เช่น cascade ไป SV ของ loop อื่น) ต้องแปลง gain ตาม span ของปลายทาง</li>
+      <li>ใช้ derivative filter α = 0.1 ในการคำนวณ margin และบวก dead time เพิ่มครึ่งหนึ่งของ control period (ผลของการ sample)</li>
+      <li>Simulation ใช้ velocity-form PID (แบบเดียวกับ DCS) มี OP clamp 0–100% ไม่รวม noise, valve dynamics และ nonlinearity</li>
+      <li>Model แบบ FOPDT/integrating เป็นการประมาณเชิงเส้นรอบจุดทำงานที่ test ถ้าจุดทำงานเปลี่ยนมาก gain อาจเปลี่ยน</li>
+    </ul>
+  </footer>
+</div>
+<!-- SCRIPTS -->
+<script src="core.js"></script>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+<!-- /SCRIPTS -->
+</body>
+</html>
