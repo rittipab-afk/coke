@@ -131,7 +131,7 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
 // ── 5. Ctrl+V anywhere on the page: DataLink layout (timestamp per tag), first time → config, second time → Loop Health
 {
   const { page, errors } = await run({ name: 'ctrlv' });
-  const src = readFileSync(join(root, 'samples', 'flow_sticky_valve.csv'), 'utf8').trim().split('\n').slice(1, 1201);
+  const src = readFileSync(join(root, 'samples', 'flow_sticky_valve.csv'), 'utf8').trim().split('\n').slice(1);
   const rows = src.map((l) => { const [t, pv, sv, mv, mode] = l.split(','); return [t, pv, t, sv, t, mv, t, mode].join('\t'); });
   const hdr = ['PV', 'SV', 'MV', 'MODE'].map((x) => `\\\\GCMPPISVR\\3-CTA.2M.3AC1102B.${x}`);
   const text = [['Timestamp', ...hdr].join('\t'), ...rows].join('\n');
@@ -141,17 +141,26 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
     document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
   }, text);
   await paste();
-  await page.waitForSelector('#overviewCard:not([hidden])');
+  await page.waitForSelector('#tab-health:not([hidden]) #hSummary .summary-box');
+  check(true, 'Ctrl+V first time: lands on Loop Health with a summary');
   check(await page.inputValue('#cfgTag') === '3-CTA.2M.3AC1102B', `Ctrl+V: tag taken from \\\\SERVER\\ DataLink header (${await page.inputValue('#cfgTag')})`);
+  check(await page.inputValue('#hTag') === '3-CTA.2M.3AC1102B', 'Ctrl+V: settings bar shows the tag');
   check(await page.inputValue('#colOP') === '5' && await page.inputValue('#colMode') === '7', 'Ctrl+V: timestamp-per-tag layout mapped');
-  check((await page.textContent('#cfgHint')).includes('ครั้งแรก'), 'Ctrl+V first time: asks for loop settings');
-  await page.fill('#cfgSL', '0'); await page.fill('#cfgSH', '80'); await page.fill('#cfgPB', '250'); await page.fill('#cfgTI', '4');
-  await page.waitForTimeout(400);
+  check(await page.inputValue('#hType') === 'analyzer', 'Ctrl+V: 3AC… guessed as analyzer');
+  check((await page.textContent('#hCfgHint')).includes('ครั้งแรก'), 'Ctrl+V first time: asks for SL/SH in the settings bar');
+  await page.fill('#hSL', '0'); await page.fill('#hSH', '80');
+  await page.selectOption('#hType', 'flow');
+  await page.waitForTimeout(500);
+  check(await page.inputValue('#cfgSL') === '0' && await page.inputValue('#cfgSH') === '80' && await page.inputValue('#cfgType') === 'flow', 'settings bar writes through to Tab 1');
+  check((await page.textContent('#hCfgHint')).includes('ถูกจำไว้'), 'settings remembered after entering SL/SH');
+  const sumTxt = await page.textContent('#hSummary');
+  check(sumTxt.includes('ควรแจ้ง engineer') && sumTxt.includes('valve ติด'), `summary for sticky flow valve (${sumTxt.slice(0, 80)}…)`);
   await page.click('nav.tabs [data-tab="model"]');
   await paste();
   await page.waitForSelector('#tab-health:not([hidden]) #hList .status');
   check(true, 'Ctrl+V second time (remembered tag): jumps to Loop Health');
   check((await page.textContent('#hList')).includes('Oscillation'), 'Ctrl+V: health computed');
+  check(await page.inputValue('#hSH') === '80', 'second paste: remembered SH shown');
   check(errors.length === 0, `no console errors (${errors.join(' | ')})`);
   await page.close();
 }
@@ -172,7 +181,7 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
     const dt = new DataTransfer(); dt.setData('text/plain', t);
     document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
   }, lines.join('\r\n'));
-  await page.waitForSelector('#overviewCard:not([hidden])');
+  await page.waitForSelector('#tab-health:not([hidden]) #hSummary .summary-box');
   check(await page.inputValue('#cfgTag') === '3-CTA.2M.3AC1101B', `real copy: tag from header (${await page.inputValue('#cfgTag')})`);
   check((await page.textContent('#dataInfo')).includes('600 จุด'), 'real copy: no rows lost to header detection');
   const warn = await page.textContent('#dataWarn');
@@ -181,7 +190,7 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
   let dialogs = 0;
   page.on('dialog', (d) => { dialogs++; d.dismiss(); });
   check((await page.textContent('#noStepHint')).includes('ไม่มี step test'), 'no-step: hint on data tab');
-  await page.click('#tab-data [data-goto="model"]');
+  await page.click('nav.tabs [data-tab="model"]');
   await page.waitForSelector('#noStepBox');
   check(await page.isDisabled('#tab-model [data-goto="tune"]'), 'no-step: Tuning button disabled');
   await page.click('#tab-model [data-goto="tune"]', { force: true });
@@ -189,6 +198,10 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
   await page.click('#noStepBox [data-goto="health"]');
   await page.waitForSelector('#tab-health:not([hidden]) #hList .status');
   check(true, 'no-step: "ไป Loop Health" button works');
+  await page.click('nav.tabs [data-tab="report"]');
+  await page.waitForSelector('#repTrend canvas');
+  const rep = await page.textContent('#reportBody');
+  check(rep.includes('รายงานสุขภาพ Loop') && rep.includes('ควรทำอะไรต่อ') && await page.$('#repXY canvas'), 'health report without model: summary, trend and OP vs PV');
   check(errors.length === 0, `no console errors (${errors.join(' | ')})`);
   await page.close();
 }
@@ -200,7 +213,7 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
     .split('\n').map((l) => l.replace(/,/g, ';').replace(/(\d)\.(\d)/g, '$1,$2')).join('\n');
   await page.fill('#paste', csv);
   await page.click('#pasteBtn');
-  await page.waitForSelector('#overviewCard:not([hidden])');
+  await page.waitForSelector('#tab-health:not([hidden]) #hSummary .summary-box');
   check((await page.textContent('#loadMsg')).includes('ทศนิยมแบบ comma'), 'decimal-comma paste detected');
   check(errors.length === 0, `no console errors (${errors.join(' | ')})`);
   await page.close();

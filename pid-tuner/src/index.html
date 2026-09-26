@@ -183,6 +183,16 @@ textarea { min-height: 90px; font-family: ui-monospace, SFMono-Regular, Consolas
 .status .head .val { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .status .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
 .status p { margin: 2px 0 0; color: var(--text-secondary); font-size: 13px; }
+.summary-box { grid-template-columns: 32px minmax(0, 1fr); padding: 14px 16px; }
+.summary-box .ico { width: 28px; height: 28px; font-size: 15px; }
+.summary-box .head b { font-size: 16px; }
+.summary-box p.lead { color: var(--text-primary); font-size: 14px; margin-top: 4px; }
+.summary-box ol { margin: 6px 0 0; padding-left: 20px; color: var(--text-secondary); font-size: 13px; }
+.summary-box ol li { margin: 3px 0; }
+.status.good.summary-box { border-color: var(--good); }
+.status.warn.summary-box { border-color: var(--warn-border); background: var(--warn-bg); }
+.status.bad.summary-box { border-color: var(--critical); background: var(--bad-bg); }
+nav.tabs .opt { font-weight: 400; font-size: 11px; color: var(--text-muted); }
 
 table.data { border-collapse: collapse; width: 100%; font-size: 13px; }
 table.data th, table.data td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; }
@@ -237,8 +247,8 @@ footer ul { padding-left: 18px; }
   <nav class="tabs" role="tablist">
     <button role="tab" data-tab="data" aria-selected="true"><span class="n">1</span>ข้อมูล</button>
     <button role="tab" data-tab="health" disabled><span class="n">2</span>Loop Health</button>
-    <button role="tab" data-tab="model" disabled><span class="n">3</span>Step test → Model</button>
-    <button role="tab" data-tab="tune" disabled><span class="n">4</span>Tuning</button>
+    <button role="tab" data-tab="model" disabled><span class="n">3</span>Step test → Model <small class="opt">(ต้องมี step test)</small></button>
+    <button role="tab" data-tab="tune" disabled><span class="n">4</span>Tuning <small class="opt">(ต้องมี step test)</small></button>
     <button role="tab" data-tab="report" disabled><span class="n">5</span>Report</button>
   </nav>
 
@@ -286,6 +296,7 @@ footer ul { padding-left: 18px; }
           <select id="cfgType">
             <option value="flow">Flow</option><option value="pressure">Pressure</option>
             <option value="temperature">Temperature</option><option value="level">Level</option>
+            <option value="analyzer">Analyzer / คุณภาพ</option>
           </select>
         </label>
         <label>PV range ต่ำ (SL)<input id="cfgSL" type="number" step="any"></label>
@@ -327,6 +338,21 @@ footer ul { padding-left: 18px; }
 
   <!-- 2. HEALTH -->
   <section class="tab" id="tab-health" hidden>
+    <div class="card" id="hSummaryCard">
+      <h2>สรุป</h2>
+      <div id="hSummary"></div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:6px">ตั้งค่า loop <span class="hint" style="font-weight:400">(กรอกครั้งแรกครั้งเดียว แอปจำไว้ต่อ tag)</span></h2>
+      <div class="form">
+        <label>Tag<input id="hTag"></label>
+        <label>ชนิด loop<select id="hType"></select></label>
+        <label>PV range ต่ำ (SL)<input id="hSL" type="number" step="any"></label>
+        <label>PV range สูง (SH)<input id="hSH" type="number" step="any"></label>
+        <label>หน่วย PV<input id="hUnit" placeholder="m3/h"></label>
+      </div>
+      <p class="hint" id="hCfgHint" style="margin-bottom:0"></p>
+    </div>
     <div class="card">
       <div class="chart-tools">
         <h2 style="margin:0">ช่วงที่วิเคราะห์</h2>

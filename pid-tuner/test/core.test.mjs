@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { core, openLoop, closedLoop, stickyValve } from '../tools/synth.mjs';
+import { core, openLoop, closedLoop, stickyValve, rng } from '../tools/synth.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const near = (actual, expected, relTol, msg) =>
@@ -100,7 +100,9 @@ test('loop tag and type from PI DataLink headers', () => {
   assert.equal(core.guessLoopType('3-CTA.2M.3LIC0501'), 'level');
   assert.equal(core.guessLoopType('3-CTA.2M.3TIC0101'), 'temperature');
   assert.equal(core.guessLoopType('PIC201'), 'pressure');
-  assert.equal(core.guessLoopType('3-CTA.2M.3AC1102B'), 'flow', 'unknown letters default to flow');
+  assert.equal(core.guessLoopType('3-CTA.2M.3AC1102B'), 'analyzer', 'ISA: A = analysis');
+  assert.equal(core.guessLoopType('3-CTA.2M.3FC1301B'), 'flow');
+  assert.equal(core.guessLoopType('3-CTA.2M.3XC0001'), 'flow', 'unknown letters default to flow');
 });
 
 test('guessColumns: full PI paths in headers (\\\\SERVER\\area.loop.PV)', () => {
@@ -333,4 +335,76 @@ test('sample CSVs parse and fit to their generating models', () => {
   const lvl = load('level_step_test.csv');
   const fl = core.fitIntegrating(lvl.op, lvl.pv, lvl.dt);
   near(fl.Ki, 0.004, 0.1, 'level Ki');
+});
+
+// ─────────────── health reliability & summary ───────────────
+function stickyData(seed = 3) {
+  const m = { type: 'fopdt', Kp: 1.5, tau: 5, theta: 1 };
+  return closedLoop({ model: m, dt: 1, T: 3600, Kc: 0.4, Ti: 4, valve: stickyValve(4, 2), noise: 0.1, seed });
+}
+function healthFull(d, loopType) {
+  const ds = { t: F(d.t), pv: F(d.pv), sp: F(d.sp), op: F(d.op), mode: null, hasSP: true, hasOP: true, dt: d.t[1] - d.t[0] };
+  return core.loopHealth(ds, { sl: 0, sh: 100, loopType });
+}
+const byKey = (h) => Object.fromEntries(h.findings.map((f) => [f.key, f]));
+/** Mimic PI compression: keep every k-th point and draw straight lines in between. */
+function compress(arr, k) {
+  const out = arr.slice();
+  for (let i = 0; i < arr.length; i += k) {
+    const j = Math.min(i + k, arr.length - 1);
+    for (let q = i + 1; q < j; q++) out[q] = arr[i] + (arr[j] - arr[i]) * (q - i) / (j - i);
+  }
+  return out;
+}
+
+test('summary: sticky flow valve → bad, advises valve check', () => {
+  const h = healthFull(stickyData(), 'flow');
+  const sum = core.healthSummary(h);
+  assert.equal(sum.level, 'bad');
+  assert.ok(sum.actions.some((a) => a.includes('valve ติด')));
+});
+
+test('stiction not computed for temperature / analyzer loops', () => {
+  for (const lt of ['temperature', 'analyzer']) {
+    const f = byKey(healthFull(stickyData(), lt));
+    assert.equal(f.stiction.status, 'na', lt);
+  }
+});
+
+test('compressed data → data warning, noise n/a, stiction not red', () => {
+  const d = stickyData();
+  const c = { ...d, pv: compress(d.pv, 60), op: compress(d.op, 60), sp: d.sp };
+  const h = healthFull(c, 'flow');
+  const f = byKey(h);
+  assert.equal(f.data.status, 'warn');
+  assert.equal(f.noise.status, 'na');
+  if (f.stiction) assert.notEqual(f.stiction.status, 'bad');
+  assert.ok(core.healthSummary(h).actions.some((a) => a.includes('compress')));
+});
+
+test('moving SP (cascade) → sp finding, stiction downgraded, cascade advice', () => {
+  const d = stickyData(4);
+  const r = rng(12);
+  let w = 0;
+  const sp = d.sp.map((v, i) => { if (i % 5 === 0) w += r.gauss() * 0.6; return v + w; });
+  const pv = d.pv.map((v, i) => v + (sp[i] - d.sp[i]));
+  const h = healthFull({ ...d, sp, pv }, 'flow');
+  const f = byKey(h);
+  assert.ok(f.sp, 'sp finding present');
+  if (f.stiction) assert.notEqual(f.stiction.status, 'bad');
+  const sum = core.healthSummary(h);
+  if (f.osc.status === 'bad') assert.ok(sum.actions.some((a) => a.includes('cascade')));
+});
+
+test('summary: aggressive pressure loop → not stiction, send to engineer; healthy loop → good', () => {
+  const m = { type: 'fopdt', Kp: 1, tau: 20, theta: 5 };
+  let Kc = core.ultimate(m, 1).Ku;
+  while (core.margins(m, { Kc, Ti: 15, Td: 0 }, 1).gm < 1.3) Kc *= 0.95;
+  const bad = core.healthSummary(healthFull(closedLoop({ model: m, dt: 1, T: 3600, Kc, Ti: 15, noise: 0.2, seed: 5 }), 'pressure'));
+  assert.equal(bad.level, 'bad');
+  assert.ok(bad.actions.some((a) => a.includes('tuning แรงเกิน')));
+  const c = core.tune(m, 'simc', 5, 1);
+  const good = core.healthSummary(healthFull(closedLoop({ model: m, dt: 1, T: 3600, Kc: c.Kc, Ti: c.Ti, noise: 0.2, seed: 6 }), 'pressure'));
+  assert.equal(good.level, 'good');
+  assert.equal(good.title, 'ปกติ');
 });

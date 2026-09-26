@@ -189,14 +189,9 @@
     loadCfgFor(tag);
     rebuild();
     if (!opts.auto || !S.rs) return;
-    if (!S.slGuessed && S.cfg.sh > S.cfg.sl) {
-      // known tag: settings remembered → go straight to the analysis
-      msg(`โหลด ${tag || 'ข้อมูล'} แล้ว ใช้ค่าตั้ง loop ที่จำไว้ (แก้ได้ใน Tab 1)`);
-      showTab('health');
-    } else {
-      $('#cfgCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      $('#cfgHint').textContent = `ครั้งแรกของ ${tag || 'tag นี้'}: กรอก SL/SH และ PB/TI/TD จากหน้า tuning บน DCS ครั้งเดียว แอปจะจำไว้ ครั้งหน้า paste แล้วไปหน้าวิเคราะห์ได้ทันที`;
-    }
+    // pasted/opened data always lands on Loop Health; a new tag gets its range filled in there
+    S.firstTime = S.slGuessed;
+    showTab('health');
   }
   ['colTime', 'colPV', 'colSP', 'colOP', 'colMode', 'dateOrder'].forEach((id) => $('#' + id).addEventListener('change', () => {
     S.map = { time: +$('#colTime').value, pv: +$('#colPV').value, sp: +$('#colSP').value, op: +$('#colOP').value, mode: +$('#colMode').value };
@@ -357,9 +352,37 @@
       <div class="head"><b>${esc(f.label)}</b><span class="val">${esc(f.value)}</span><span class="tag">${STATUS_TXT[f.status]}</span></div>
       <p>${esc(f.msg)}</p></div></div>`;
   }
+  // Loop Health settings bar mirrors the Tab 1 fields (same storage, same change handling)
+  const MINI = { hTag: 'cfgTag', hType: 'cfgType', hSL: 'cfgSL', hSH: 'cfgSH', hUnit: 'cfgUnit' };
+  $('#hType').innerHTML = $('#cfgType').innerHTML;
+  for (const [mini, full] of Object.entries(MINI)) {
+    const ev = mini === 'hType' ? 'change' : 'input';
+    $('#' + mini).addEventListener(ev, () => {
+      $('#' + full).value = $('#' + mini).value;
+      $('#' + full).dispatchEvent(new Event('input'));
+    });
+  }
+  function syncMini() {
+    for (const [mini, full] of Object.entries(MINI)) if (document.activeElement !== $('#' + mini)) $('#' + mini).value = $('#' + full).value;
+    const tag = S.cfg.tag || 'tag นี้';
+    $('#hCfgHint').innerHTML = S.slGuessed
+      ? `<span class="pill warn">ครั้งแรกของ ${esc(tag)}: SL/SH ตอนนี้แอปเดาจากข้อมูล ใส่ค่าจริงจาก DCS เพื่อให้ตัวเลข %span ถูกต้อง แล้วแอปจะจำไว้</span>`
+      : `ค่าของ ${esc(tag)} ถูกจำไว้แล้ว ครั้งหน้า paste แล้วดูผลได้ทันที · ค่า PB/TI/TD สำหรับ tuning อยู่ใน Tab 1`;
+  }
+  const SUM_ICON = { good: '✓', warn: '!', bad: '✕' };
+  function summaryHTML(sum) {
+    return `<div class="status ${sum.level} summary-box"><span class="ico" aria-hidden="true">${SUM_ICON[sum.level]}</span><div>
+      <div class="head"><b>${esc(sum.title)}</b></div>
+      <p class="lead">${esc(sum.text)}</p>
+      ${sum.actions.length ? `<p><b>ควรทำอะไรต่อ</b></p><ol>${sum.actions.map((a) => `<li>${esc(a)}</li>`).join('')}</ol>` : ''}
+    </div></div>`;
+  }
   function renderHealth() {
     if (!S.rs) return;
+    syncMini();
     S.health = computeHealth();
+    S.summary = S.health ? C.healthSummary(S.health, { slGuessed: S.slGuessed }) : null;
+    $('#hSummary').innerHTML = S.summary ? summaryHTML(S.summary) : '<div class="empty">ใส่ PV range (SL/SH) ด้านล่างให้ถูกต้องก่อน</div>';
     const [i0, i1] = S.health ? S.health.range : [0, S.rs.t.length];
     $('#hRangeLabel').textContent = S.healthRange ? `${fmtTime(S.rs.t[i0])} → ${fmtTime(S.rs.t[i1 - 1])}` : 'ทั้งหมด';
     trendLegend($('#hLegend'));
@@ -745,21 +768,27 @@
     if (S.model && !S.result) { enterTune(); }
     const c = S.cfg, rs = S.rs;
     const now = new Date();
-    const typeTH = { flow: 'Flow', pressure: 'Pressure', temperature: 'Temperature', level: 'Level' }[c.loopType];
-    let h = `<h1>รายงาน Loop Tuning: ${esc(tagName())}</h1>
+    const typeTH = { flow: 'Flow', pressure: 'Pressure', temperature: 'Temperature', level: 'Level', analyzer: 'Analyzer' }[c.loopType];
+    if (S.health) S.summary = C.healthSummary(S.health, { slGuessed: S.slGuessed });
+    let sec = 0;
+    const H2 = (t) => `<h2>${++sec}. ${t}</h2>`;
+    let h = `<h1>${S.result ? 'รายงาน Loop Tuning' : 'รายงานสุขภาพ Loop'}: ${esc(tagName())}</h1>
       <p class="hint">สร้างเมื่อ ${now.toLocaleString('th-TH')} · ข้อมูล ${fmtTime(0)} → ${fmtTime(rs.t[rs.t.length - 1])} · ${esc($('#hideTag').checked ? 'source hidden' : S.fileName)}</p>
       <div class="banner"><b>เอกสารประกอบการพิจารณาเท่านั้น</b> ค่าที่แนะนำต้องผ่านการทบทวนของ control engineer และ MOC ก่อนนำไปใช้</div>
-      <h2>1. ข้อมูล loop</h2>
+      ${H2('ข้อมูล loop')}
       <dl class="kv"><dt>ชนิด</dt><dd>${typeTH}</dd><dt>PV range</dt><dd>${fmtSig(c.sl)} – ${fmtSig(c.sh)} ${esc(unit())}${S.slGuessed ? ' (เดาจากข้อมูล)' : ''}</dd>
       <dt>ค่าปัจจุบัน</dt><dd>${isNum(c.PB) ? `PB ${fmtSig(c.PB)}%, TI ${c.TI ? fmtSig(c.TI) + ' s' : 'ไม่มี'}, TD ${fmtSig(c.TD || 0)} s` : 'ไม่ระบุ'}</dd>
       <dt>Control period / algorithm</dt><dd>${c.Ts} s / ${esc($('#cfgAlg').selectedOptions[0].textContent)}</dd></dl>`;
     if (S.health) {
       const hr = S.health.range;
-      h += `<h2>2. Loop health</h2><p class="hint">ช่วง ${fmtTime(rs.t[hr[0]])} → ${fmtTime(rs.t[hr[1] - 1])}</p><div class="status-list">${S.health.findings.map(statusHTML).join('')}</div>`;
+      h += `${H2('สรุปสุขภาพ loop')}<p class="hint">ช่วงที่วิเคราะห์ ${fmtTime(rs.t[hr[0]])} → ${fmtTime(rs.t[hr[1] - 1])}</p>${S.summary ? summaryHTML(S.summary) : ''}
+        ${H2('ผลการตรวจ')}<div class="status-list">${S.health.findings.map(statusHTML).join('')}</div>
+        ${H2('Trend ช่วงที่วิเคราะห์')}<div class="legend" id="repTrendLegend"></div><div id="repTrend"></div>
+        ${rs.hasOP ? `<h3>OP vs PV</h3><div id="repXY"></div>` : ''}`;
     }
     if (S.model) {
       const m = S.model;
-      h += `<h2>3. Process model (${S.modelSource === 'manual' ? 'กรอกเอง' : 'fit จาก step test'})</h2>`;
+      h += `${H2(`Process model (${S.modelSource === 'manual' ? 'กรอกเอง' : 'fit จาก step test'})`)}`;
       h += m.type === 'fopdt'
         ? `<dl class="kv"><dt>Kp</dt><dd>${fmtSig(m.Kp)} %span/%OP</dd><dt>τ</dt><dd>${fmtSec(m.tau)}</dd><dt>θ</dt><dd>${fmtSec(m.theta)}</dd>`
         : `<dl class="kv"><dt>Ki</dt><dd>${fmtSig(m.Ki)} %span/s/%OP</dd><dt>θ</dt><dd>${fmtSec(m.theta)}</dd>`;
@@ -769,17 +798,35 @@
     }
     if (S.result) {
       const r = S.result;
-      h += `<h2>4. ค่าที่แนะนำ (${esc(r.method.name)}, ${esc(r.method.param)} = ${fmtSec(r.lam)})</h2>
+      h += `${H2(`ค่าที่แนะนำ (${esc(r.method.name)}, ${esc(r.method.param)} = ${fmtSec(r.lam)})`)}
         <div class="scroll-x"><table class="data"><thead><tr><th></th><th>ปัจจุบัน</th><th>แนะนำ</th><th>แนะนำ ถ้า gain/θ +30%</th></tr></thead><tbody>
         ${r.table.map((row) => `<tr><td>${row[0]}</td><td>${row[1] ?? '—'}</td><td class="hl">${row[2]}</td><td>${row[3]}</td></tr>`).join('')}</tbody></table></div>
         <ul class="notes">${r.notes.map((n) => `<li>${n.status === 'bad' ? '✕ ' : n.status === 'warn' ? '! ' : ''}${esc(n.text)}</li>`).join('')}</ul>
-        <h2>5. ผลจำลอง</h2><div class="legend" id="repLegend"></div><div id="repSim"></div>`;
+        ${H2('ผลจำลอง')}<div class="legend" id="repLegend"></div><div id="repSim"></div>`;
     } else {
-      h += '<p class="hint">ยังไม่มี model/tuning ทำ Tab 3 และ 4 เพื่อให้ report สมบูรณ์</p>';
+      h += '<p class="hint">รายงานนี้ไม่มีส่วน tuning เพราะข้อมูลไม่มี step test (ส่วน tuning จะเพิ่มเมื่อหา model ได้ใน Tab 3–4)</p>';
     }
     h += `<h2>ลงนาม</h2><dl class="kv"><dt>จัดทำโดย</dt><dd>..............................................</dd><dt>ตรวจโดย (Control Eng.)</dt><dd>..............................................</dd><dt>MOC No.</dt><dd>..............................................</dd></dl>`;
-    dropChart('rep');
+    dropChart('rep'); dropChart('repTrend'); dropChart('repXY');
     body.innerHTML = h;
+    if (S.health) {
+      const [i0, i1] = S.health.range;
+      const sub = (a) => a.subarray(i0, i1);
+      trendLegend($('#repTrendLegend'));
+      chart('repTrend', $('#repTrend'), {
+        x: sub(rs.t), xFormat: fmtTime, xTickFormat: tickTime, mode: 'zoom', ariaLabel: 'Trend PV, SP และ OP ช่วงที่วิเคราะห์',
+        panes: [
+          { label: `PV / SP (${unit()})`, height: 170, series: [{ name: 'PV', y: sub(rs.pv), color: '--series-1' }, ...(rs.hasSP ? [{ name: 'SP', y: sub(rs.sp), color: '--ref', dash: true, width: 1.5 }] : [])] },
+          ...(rs.hasOP ? [{ label: 'OP / MV (%)', height: 110, series: [{ name: 'OP', y: sub(rs.op), color: '--series-2' }] }] : []),
+        ],
+      });
+      if (rs.hasOP) {
+        const step = Math.max(1, Math.floor((i1 - i0) / 20000));
+        const xs = [], ys = [];
+        for (let i = i0; i < i1; i += step) { xs.push(rs.op[i]); ys.push(rs.pv[i]); }
+        chart('repXY', $('#repXY'), { x: xs, y: ys, xLabel: 'OP (%)', yLabel: `PV (${unit()})`, color: '--series-1', height: 240, ariaLabel: 'กราฟ OP เทียบ PV' }, 'xy');
+      }
+    }
     if (S.result) {
       const p = simPanes($('#repLegend'));
       chart('rep', $('#repSim'), Object.assign(p, { xType: 'number', xFormat: (v) => `t = ${fmtDur(v)}`, xTickFormat: tickDur, mode: 'zoom', ariaLabel: 'ผลจำลอง closed-loop' }));
@@ -799,7 +846,12 @@
   });
   function reportText() {
     const c = S.cfg, L = [];
-    L.push(`Loop tuning summary: ${tagName()} (${c.loopType})`);
+    L.push(`${S.result ? 'Loop tuning' : 'Loop health'} summary: ${tagName()} (${c.loopType})`);
+    if (S.summary) {
+      L.push(`Verdict: ${S.summary.title} — ${S.summary.text}`);
+      if (S.summary.actions.length) { L.push('Next actions:'); S.summary.actions.forEach((a, i) => L.push(`${i + 1}. ${a}`)); }
+      L.push('');
+    }
     if (S.rs) L.push(`Data: ${fmtTime(0)} → ${fmtTime(S.rs.t[S.rs.t.length - 1])}, dt ${fmtSig(S.rs.dt)} s, PV range ${c.sl}–${c.sh} ${unit()}`);
     L.push(`Current: ${isNum(c.PB) ? `PB ${c.PB}%, TI ${c.TI || 0} s, TD ${c.TD || 0} s` : 'n/a'}; control period ${c.Ts} s; algorithm ${c.alg}`);
     if (S.health) { L.push('', 'Loop health:'); for (const f of S.health.findings) L.push(`- [${f.status}] ${f.label}: ${f.value} — ${f.msg}`); }

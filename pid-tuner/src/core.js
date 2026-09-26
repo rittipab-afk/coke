@@ -298,7 +298,7 @@
   /** Loop type from the instrument letters of the last tag segment (3FIC101 → flow, LIC → level ...). */
   function guessLoopType(tag) {
     const seg = String(tag || '').split('.').pop().replace(/^[\d-]+/, '').toUpperCase();
-    return { F: 'flow', P: 'pressure', T: 'temperature', L: 'level' }[seg[0]] || 'flow';
+    return { F: 'flow', P: 'pressure', T: 'temperature', L: 'level', A: 'analyzer' }[seg[0]] || 'flow';
   }
   function numericLooksLikeTime(vals) {
     const n = vals.map(Number).filter(isNum);
@@ -584,6 +584,17 @@
       add('auto', 'เวลาอยู่ใน AUTO/CAS', '—', 'na', 'ไม่มี column MODE จึงวิเคราะห์ข้อมูลทั้งหมดเหมือนเป็น closed-loop');
     }
 
+    // data quality: PI compression (straight lines between archived values) and a moving SP (CAS/APC)
+    const comp = compressionCheck(ds.pv);
+    M.compressed = comp.suspicious;
+    M.compression = comp;
+    const spStd = ds.hasSP ? std(spp) : 0, pvStd = std(pvp);
+    M.spMoving = ds.hasSP && isNum(spStd) && isNum(pvStd) && pvStd > 0 && spStd >= 0.5 * pvStd && spStd > 0.05;
+    if (M.compressed) add('data', 'คุณภาพข้อมูล', `เส้นตรง ${(comp.linFrac * 100).toFixed(0)}% · ค่าซ้ำ ${(comp.flatFrac * 100).toFixed(0)}%`, 'warn',
+      'ข้อมูลเป็นค่าที่ PI เติมเส้นตรงระหว่างจุดที่เก็บจริง (compression) ผล noise และ stiction จึงเชื่อได้น้อย ถ้าจะตรวจละเอียดให้ดู trend 1 วินาทีบน DCS หรือขอ PI admin ดู compression setting ของ tag');
+    if (M.spMoving) add('sp', 'SP / SV', 'ขยับตลอดช่วง', 'na',
+      'SP ถูกเปลี่ยนตลอด น่าจะอยู่ใน CAS หรือ APC เป็นคนสั่ง การแกว่งอาจมาจาก loop ต้นทาง ไม่ใช่ loop นี้');
+
     // control error
     if (e.length > 10) {
       M.errMean = mean(e); M.errStd = std(e);
@@ -614,7 +625,9 @@
     // PV noise
     const noise = diffNoise(pvp);
     M.noise = noise;
-    if (isNum(noise)) {
+    if (isNum(noise) && M.compressed) {
+      add('noise', 'PV noise', '—', 'na', 'ประเมินไม่ได้ เพราะข้อมูลถูก compress (เส้นตรงระหว่างจุดทำให้ดูเหมือน noise ต่ำ)');
+    } else if (isNum(noise)) {
       const st = noise < 0.2 ? 'good' : noise < 1 ? 'warn' : 'bad';
       add('noise', 'PV noise', `${noise.toFixed(3)} %span`, st,
         st === 'good' ? 'noise ต่ำ ใช้ derivative ได้ถ้าจำเป็น' : 'noise สูง ไม่ควรใช้ derivative (TD) หรือต้องมี PV filter และระวัง gain สูงจะทำให้ valve วิ่งตาม noise');
@@ -636,16 +649,20 @@
         add('osc', 'Oscillation', osc.crossings >= 4 ? `ไม่สม่ำเสมอ (r = ${osc.regularity.toFixed(1)})` : 'ไม่พบ', 'good', 'ไม่พบการแกว่งที่เป็นคาบชัดเจน');
       }
       if (osc.oscillating && ds.hasOP) {
-        if (cfg.loopType === 'level') {
-          add('stiction', 'Stiction indicator', 'N/A', 'na', 'วิธี cross-correlation ใช้กับ level (integrating) ไม่ได้ ให้ดู OP vs PV plot และทำ valve test ในสนาม');
+        if (cfg.loopType !== 'flow' && cfg.loopType !== 'pressure') {
+          add('stiction', 'Stiction indicator', 'N/A', 'na', 'วิธี cross-correlation (Horch) ใช้ได้กับ flow/pressure loop ที่ตอบสนองเร็ว กับ loop ชนิดนี้ให้ดูกราฟ OP vs PV และทำ valve test ในสนาม');
         } else {
           const opSeg = ds.op.subarray(s0, s1), pvSeg = pvp.subarray(s0, s1);
           const st = stictionHorch(opSeg, pvSeg, osc.periodSamples);
+          const why = [M.compressed && 'ข้อมูลถูก compress', M.spMoving && 'SP ขยับตลอด (CAS/APC)'].filter(Boolean);
+          if (st.verdict === 'likely' && why.length) { st.verdict = 'inconclusive'; st.downgraded = why; }
           M.stiction = st;
           const map = {
             likely: ['bad', 'สงสัย stiction', 'CCF ระหว่าง OP กับ PV เป็นแบบ odd ซึ่งเป็นลักษณะของ valve stiction ให้ยืนยันด้วย valve signature หรือ bump test (ขยับ OP ทีละน้อยใน MAN) ถ้าใช่ต้องแก้ valve ก่อน เพราะ tuning ช่วยไม่ได้'],
             unlikely: ['good', 'ไม่น่าใช่ stiction', 'CCF เป็นแบบ even การแกว่งน่าจะมาจาก tuning แรงเกินหรือ disturbance ภายนอก'],
-            inconclusive: ['warn', 'ไม่ชัดเจน', 'ผลอยู่ก้ำกึ่ง ให้ดูรูป OP vs PV (ถ้าเป็นสี่เหลี่ยมด้านขนาน = stiction) และทดสอบในสนาม'],
+            inconclusive: st.downgraded
+              ? ['warn', 'ไม่ชัดเจน', `ผลคำนวณเอนไปทาง stiction แต่เชื่อได้น้อยเพราะ${st.downgraded.join(' และ ')} ให้ยืนยันจาก trend 1 วินาทีบน DCS (MV เป็นฟันเลื่อย แต่ PV กระโดดเป็นขั้น = valve ติด) หรือ valve test`]
+              : ['warn', 'ไม่ชัดเจน', 'ผลอยู่ก้ำกึ่ง ให้ดูรูป OP vs PV (ถ้าเป็นสี่เหลี่ยมด้านขนาน = stiction) และทดสอบในสนาม'],
           }[st.verdict];
           add('stiction', 'Stiction indicator', `${map[1]} (oddness ${st.oddness.toFixed(2)})`, map[0], map[2]);
         }
@@ -654,6 +671,66 @@
       add('osc', 'Oscillation', '—', 'na', 'ช่วงข้อมูล closed-loop ที่ต่อเนื่องสั้นเกินไป (ต้องมีอย่างน้อย 50 จุด)');
     }
     return out;
+  }
+
+  /**
+   * Plain-language verdict + next actions from loopHealth() output.
+   * Returns { level: 'good'|'warn'|'bad', title, text, actions[] }.
+   */
+  function healthSummary(h, cfg = {}) {
+    const F = Object.fromEntries(h.findings.map((f) => [f.key, f]));
+    const M = h.metrics || {};
+    const actions = [];
+    let level = 'good';
+    const bump = (l) => { if (l === 'bad' || (l === 'warn' && level === 'good')) level = l; };
+    const parts = [];
+    const osc = F.osc && F.osc.status === 'bad';
+    const st = M.stiction && M.stiction.verdict;
+    if (osc) {
+      parts.push(`loop แกว่งเป็นจังหวะ คาบประมาณ ${fmtDuration(M.osc.period)}`);
+      if (M.spMoving) {
+        bump('warn');
+        actions.push('SP ถูกสั่งจาก loop อื่น (CAS/APC) ให้ดึงข้อมูล loop ต้นทางช่วงเวลาเดียวกันมาดู ถ้าแกว่งคาบเท่ากัน แปลว่าแกว่งทั้ง cascade');
+      }
+      if (st === 'likely') {
+        bump('bad');
+        actions.push('สงสัย valve ติด (stiction) แจ้ง instrument ตรวจ valve (positioner / valve signature) ก่อนแก้ tuning เพราะปรับ tuning ไม่ได้แก้ต้นเหตุ');
+      } else if (st === 'unlikely') {
+        bump('bad');
+        actions.push('ไม่น่าใช่ valve ติด การแกว่งน่าจะมาจาก tuning แรงเกินหรือ disturbance ส่งให้ control engineer พิจารณา');
+      } else if (st === 'inconclusive') {
+        bump('warn');
+        actions.push('ยังแยกไม่ได้ว่าเป็น valve ติดหรือ tuning ให้ดู trend 1 วินาทีบน DCS: MV เป็นฟันเลื่อยแต่ PV กระโดดเป็นขั้น = valve ติด');
+      } else if (!M.spMoving) {
+        bump('warn');
+        actions.push('ส่งให้ control engineer พิจารณาต้นเหตุ (tuning, valve หรือ loop อื่นที่แกว่งมารบกวน) และดู trend บน DCS ประกอบ');
+      }
+    }
+    if (F.sat && F.sat.status !== 'good') {
+      bump(F.sat.status);
+      parts.push('OP ติดขอบบ่อย');
+      actions.push('valve เปิดสุดหรือปิดสุดบ่อย ตรวจขนาด valve, bypass หรือ SP ที่เป็นไปไม่ได้');
+    }
+    if (F.offset) {
+      bump('warn');
+      parts.push('PV มี offset ค้างจาก SP');
+    }
+    if (F.auto && (F.auto.status === 'warn' || F.auto.status === 'bad')) {
+      bump(F.auto.status);
+      parts.push('loop ถูกเปลี่ยนเป็น MAN บ่อย');
+      actions.push('ถาม operator ว่าทำไมต้องเปลี่ยนเป็น MAN (tuning, valve หรือ process upset)');
+    }
+    if (!osc && F.err && F.err.status !== 'good' && F.err.status !== 'na') {
+      bump('warn');
+      parts.push('PV ห่าง SP ค่อนข้างมาก แต่ไม่ได้แกว่งเป็นจังหวะ');
+      actions.push('ดูว่ามี disturbance จาก process หรือ SP เปลี่ยนบ่อย ถ้าเกิดต่อเนื่องให้ engineer พิจารณา tuning');
+    }
+    if (M.compressed) actions.push('ข้อมูลถูก PI compress ผลบางข้อเชื่อได้น้อย ดู trend 1 วินาทีบน DCS ประกอบ');
+    if (cfg.slGuessed) actions.push('ใส่ SL/SH จริงจาก DCS เพื่อให้ตัวเลข %span ถูกต้อง');
+    const title = { good: 'ปกติ', warn: 'ควรติดตาม', bad: 'ควรแจ้ง engineer' }[level];
+    const text = parts.length ? parts.join(' · ') : 'ไม่พบปัญหาในช่วงข้อมูลนี้';
+    if (!parts.length && !actions.length) actions.push('ไม่ต้องทำอะไรเพิ่ม ตรวจซ้ำเป็นระยะได้');
+    return { level, title, text, actions };
   }
 
   function fmtDuration(s) {
@@ -941,7 +1018,8 @@
     const tau = model.tau;
     switch (loopType) {
       case 'flow': return { method: 'lambda', lam: Math.max(tau, th), min: Math.max(0.2 * tau, th * 0.5, 0.1), max: Math.max(5 * tau, 5 * th) };
-      case 'temperature': {
+      case 'temperature':
+      case 'analyzer': {
         const ratio = model.theta / tau;
         return { method: ratio > 0.3 ? 'imc-pid' : 'simc', lam: Math.max(th, 0.25 * tau), min: Math.max(0.3 * th, 0.05 * tau, 0.1), max: Math.max(3 * tau, 6 * th) };
       }
@@ -1159,7 +1237,7 @@
     // correlation
     fft, acf, ccf,
     // health
-    detectOscillation, stictionHorch, loopHealth,
+    detectOscillation, stictionHorch, loopHealth, healthSummary,
     // model
     findSteps, fitFOPDT, fitIntegrating, modelResponse, sliceWindow, simFOPDTUnit,
     // tuning
