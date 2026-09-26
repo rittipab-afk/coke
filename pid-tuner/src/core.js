@@ -330,13 +330,17 @@
     const uniq = recs.filter((r, i) => i === 0 || r.tm !== recs[i - 1].tm);
     const t0 = uniq.length ? uniq[0].tm : 0;
     const n = uniq.length;
+    // A MODE column without any AUT/MAN/CAS value (e.g. DataLink "Tag not found") is ignored.
+    const modeUsable = map.mode >= 0 && uniq.some((r) => modeClass(r.mode) !== null);
     const ds = {
       t0, dateOrder: order,
       t: new Float64Array(n), pv: new Float64Array(n), sp: new Float64Array(n), op: new Float64Array(n),
-      mode: map.mode >= 0 ? uniq.map((r) => modeClass(r.mode)) : null,
-      modeRaw: map.mode >= 0 ? uniq.map((r) => r.mode) : null,
+      mode: modeUsable ? uniq.map((r) => modeClass(r.mode)) : null,
+      modeRaw: modeUsable ? uniq.map((r) => r.mode) : null,
+      modeIgnored: map.mode >= 0 && !modeUsable,
       hasSP: map.sp >= 0, hasOP: map.op >= 0,
       stats: { rows: rows.length, used: n, badValues: bad, badTime, duplicates: recs.length - n },
+      spConstant: map.sp >= 0 && uniq.length > 1 && uniq.every((r) => r.sp === uniq[0].sp) ? uniq[0].sp : null,
     };
     for (let i = 0; i < n; i++) {
       ds.t[i] = (uniq[i].tm - t0) / 1000;

@@ -223,6 +223,11 @@
     if (S.map.sp < 0) w.push('ไม่มี column SP จะวิเคราะห์ error ไม่ได้');
     if (S.map.op < 0) w.push('ไม่มี column OP/MV จะหา model และวิเคราะห์ stiction ไม่ได้');
     if (S.map.mode < 0) w.push('ไม่มี column MODE จะถือว่าข้อมูลทั้งหมดเป็น closed-loop');
+    if (S.ds.modeIgnored) w.push('column MODE ไม่มีค่า AUT/MAN/CAS (เช่น "Tag not found" จาก PI DataLink) จึงไม่ใช้ และถือว่าข้อมูลทั้งหมดเป็น closed-loop');
+    if (S.ds.spConstant !== null) {
+      const [lo, hi] = C.minmax(S.ds.pv);
+      if (S.ds.spConstant < lo || S.ds.spConstant > hi) w.push(`SP/SV คงที่ที่ ${S.ds.spConstant} ตลอดช่วง และไม่อยู่ในช่วงของ PV เลย อาจไม่ใช่ SV ของ loop นี้ (ตรวจชื่อ tag) ผล Error/Offset ใน Loop Health จะไม่ถูกต้อง`);
+    }
     warn.innerHTML = w.map((t) => `<p class="pill warn" style="display:block;border-radius:8px;margin:8px 0 0;padding:6px 10px">${esc(t)}</p>`).join('');
 
     if (S.slGuessed || !isNum(S.cfg.sl) || !isNum(S.cfg.sh)) guessRange();
