@@ -84,16 +84,18 @@
     $('nav.tabs [data-tab="model"]').disabled = !has;
     $('nav.tabs [data-tab="tune"]').disabled = !S.model;
     $('nav.tabs [data-tab="report"]').disabled = !S.rs;
+    // "next: Tuning" buttons stay disabled (with the reason on hover) until there is a model
+    $$('[data-goto="tune"]').forEach((b) => {
+      b.disabled = !S.model;
+      b.title = S.model ? '' : 'ต้องมี model ก่อน: ข้อมูลต้องมีช่วง step MV ใน MAN หรือกรอก model เอง';
+    });
   }
   $$('nav.tabs button').forEach((b) => b.addEventListener('click', () => !b.disabled && showTab(b.dataset.tab)));
   document.addEventListener('click', (ev) => {
     const g = ev.target.closest('[data-goto]');
     if (!g) return;
     const tab = $(`nav.tabs [data-tab="${g.dataset.goto}"]`);
-    if (tab && tab.disabled) {
-      if (g.dataset.goto === 'tune') alert('ต้องมี model ก่อน: เลือกช่วง step test ใน Tab 3 หรือกรอก model เอง');
-      return;
-    }
+    if (g.disabled || (tab && tab.disabled)) return;
     showTab(g.dataset.goto);
   });
 
@@ -239,6 +241,8 @@
     enableTabs();
     renderOverview();
     updateCfgHint();
+    const noStep = S.rs.hasOP && detectSteps().length === 0;
+    $('#noStepHint').textContent = noStep ? 'ข้อมูลนี้ไม่มี step test (MV ไม่ได้ถูกขยับใน MAN) จึงหาค่า tuning ไม่ได้ ใช้ Loop Health ได้' : '';
   }
 
   // ───────────────────────── loop config ─────────────────────────
@@ -397,8 +401,7 @@
     if (!S.rs.hasOP) {
       $('#fitOut').innerHTML = '<div class="empty">ต้องมี column OP/MV จึงจะหา model ได้</div>';
     }
-    const opNoise = C.diffNoise(S.rs.op);
-    steps = S.rs.hasOP ? C.findSteps(S.rs.op, Math.max(0.5, 4 * (opNoise || 0))) : [];
+    steps = detectSteps();
     const list = $('#stepList');
     list.innerHTML = steps.length
       ? `<span class="hint">พบ OP step ${steps.length} ครั้ง:</span> <button class="btn small" type="button" data-step="all">ทุก step</button>` +
@@ -407,7 +410,19 @@
     if (!S.fitRange && steps.length) S.fitRange = stepWindow('all');
     renderModelChart();
     if (S.fitRange && !S.fit) runFit(false);
+    if (!S.fit && S.rs.hasOP) $('#fitOut').innerHTML = steps.length ? '<div class="empty">ยังไม่ได้เลือกช่วงข้อมูล</div>' : NO_STEP_HTML;
     renderManual();
+    enableTabs();
+  }
+  const NO_STEP_HTML = `<div class="status warn" id="noStepBox"><span class="ico" aria-hidden="true">!</span><div>
+    <div class="head"><b>ข้อมูลช่วงนี้ไม่มี step test</b></div>
+    <p>ไม่พบช่วงที่ขยับ MV ใน MAN (loop อยู่ใน AUTO/CAS และ controller ขยับ MV เอง) จึงหา model และคำนวณค่า tuning ไม่ได้ ไม่ใช่แอปเสีย</p>
+    <p>ใช้ <b>Loop Health</b> ดูสุขภาพ loop ได้เลย · ถ้าต้องการค่า PB/TI ที่แนะนำ ต้องมีข้อมูลช่วง step test หรือกรอก model จาก engineer ในกล่องด้านขวา</p>
+    <p style="margin-top:8px"><button class="btn primary small" type="button" data-goto="health">ไป Loop Health</button></p></div></div>`;
+  function detectSteps() {
+    if (!S.rs || !S.rs.hasOP) return [];
+    const opNoise = C.diffNoise(S.rs.op);
+    return C.findSteps(S.rs.op, Math.max(0.5, 4 * (opNoise || 0)));
   }
   function stepWindow(k) {
     const t = S.rs.t, n = t.length;

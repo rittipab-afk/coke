@@ -177,6 +177,18 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
   check((await page.textContent('#dataInfo')).includes('600 จุด'), 'real copy: no rows lost to header detection');
   const warn = await page.textContent('#dataWarn');
   check(warn.includes('Tag not found') && warn.includes('SP/SV คงที่'), 'real copy: MODE ignored and constant SV flagged');
+  // no step test in this data: explain instead of popping a dialog
+  let dialogs = 0;
+  page.on('dialog', (d) => { dialogs++; d.dismiss(); });
+  check((await page.textContent('#noStepHint')).includes('ไม่มี step test'), 'no-step: hint on data tab');
+  await page.click('#tab-data [data-goto="model"]');
+  await page.waitForSelector('#noStepBox');
+  check(await page.isDisabled('#tab-model [data-goto="tune"]'), 'no-step: Tuning button disabled');
+  await page.click('#tab-model [data-goto="tune"]', { force: true });
+  check(dialogs === 0, 'no-step: no popup dialog');
+  await page.click('#noStepBox [data-goto="health"]');
+  await page.waitForSelector('#tab-health:not([hidden]) #hList .status');
+  check(true, 'no-step: "ไป Loop Health" button works');
   check(errors.length === 0, `no console errors (${errors.join(' | ')})`);
   await page.close();
 }
