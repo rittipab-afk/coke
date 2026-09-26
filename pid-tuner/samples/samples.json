@@ -1,0 +1,77 @@
+[
+  {
+    "file": "flow_step_test.csv",
+    "tag": "FIC101",
+    "loopType": "flow",
+    "sl": 0,
+    "sh": 50,
+    "unit": "m3/h",
+    "current": {
+      "PB": 150,
+      "TI": 10,
+      "TD": 0
+    },
+    "Ts": 1,
+    "note": "Flow step test ใน MAN (Kp=1.6, τ=6 s, θ=2 s)"
+  },
+  {
+    "file": "flow_sticky_valve.csv",
+    "tag": "FIC102",
+    "loopType": "flow",
+    "sl": 0,
+    "sh": 80,
+    "unit": "m3/h",
+    "current": {
+      "PB": 250,
+      "TI": 4,
+      "TD": 0
+    },
+    "Ts": 1,
+    "note": "Flow loop ใน AUT ที่ valve มี stiction (S=4%, J=2%) ทำให้แกว่งเป็น limit cycle"
+  },
+  {
+    "file": "pressure_oscillating.csv",
+    "tag": "PIC201",
+    "loopType": "pressure",
+    "sl": 0,
+    "sh": 10,
+    "unit": "barg",
+    "current": {
+      "PB": 25,
+      "TI": 15,
+      "TD": 0
+    },
+    "Ts": 1,
+    "note": "Pressure loop ที่ tune แรงเกิน (GM ≈ 1.35) แกว่งแต่ valve ปกติ"
+  },
+  {
+    "file": "temperature_step_test.csv",
+    "tag": "TIC301",
+    "loopType": "temperature",
+    "sl": 150,
+    "sh": 250,
+    "unit": "°C",
+    "current": {
+      "PB": 80,
+      "TI": 600,
+      "TD": 0
+    },
+    "Ts": 2,
+    "note": "Temperature step test (Kp=0.9, τ=300 s, θ=60 s) เวลาแบบ พ.ศ."
+  },
+  {
+    "file": "level_step_test.csv",
+    "tag": "LIC401",
+    "loopType": "level",
+    "sl": 0,
+    "sh": 100,
+    "unit": "%",
+    "current": {
+      "PB": 100,
+      "TI": 600,
+      "TD": 0
+    },
+    "Ts": 1,
+    "note": "Level (integrating) step test (Ki=0.004 %/s/%, θ=6 s, balance OP 48%)"
+  }
+]
