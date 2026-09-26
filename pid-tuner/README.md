@@ -1,5 +1,22 @@
 # PID Loop Tuner
 
+## ✅ ใช้ไฟล์ Excel เป็นหลัก: [`excel/PI_Loop_Health.xlsx`](excel/PI_Loop_Health.xlsx)
+
+ไฟล์เดียวจบใน Excel (Microsoft 365) สูตรล้วน ไม่มี macro ใช้คู่กับ PI DataLink
+- **Setup:** เปลี่ยนชื่อ loop 1 ช่อง และมีตาราง loop (ชนิด, SL/SH, หน่วย, PB/TI/TD) ใส่ครั้งเดียวต่อ loop
+- **Data:** PI DataLink → Sampled Data ใส่ผลที่ `Data!A2` (สร้างครั้งเดียว) · รองรับ 20,000 แถว
+- **Health:** บทสรุป ✓ ปกติ / ! ควรติดตาม / ✕ ควรแจ้ง engineer + สิ่งที่ควรทำต่อ + ผลตรวจ (AUTO %, error, OP ติดขอบ, noise, การแกว่งและคาบด้วย autocorrelation, คุณภาพข้อมูล/PI compression, SP ขยับ) + กราฟ trend และ OP vs PV
+- **Tuning:** ตัวช่วยอ่าน Kp/θ/τ จาก trend DCS + คำนวณ PB/TI/TD (Lambda, SIMC, IMC-PID, averaging/tight level)
+- **Report:** หน้าเดียวสำหรับพิมพ์ส่ง engineer
+- [`excel/PI_Loop_Health_Example.xlsx`](excel/PI_Loop_Health_Example.xlsx) = ไฟล์เดียวกันแต่มีข้อมูลจำลอง (ลักษณะคล้าย 3FC1301B) ไว้ดูหน้าตาผลลัพธ์
+- ไม่มีการตรวจ valve ติดอัตโนมัติ (ให้ดูกราฟ OP vs PV และ trend 1 วินาทีบน DCS)
+
+สร้างใหม่: `python3 excel/make_workbook.py` · ตรวจสูตรเทียบกับ core ของ web app: `python3 excel/verify_workbook.py` (ต้องมี LibreOffice และ Node)
+
+---
+
+## Web app (หยุดพัฒนาแล้ว ยังใช้งานได้)
+
 Web app ไฟล์เดียวสำหรับวิเคราะห์ control loop และแนะนำค่า **PB / TI / TD** (หน่วย CENTUM) จากข้อมูลที่ export จาก PI
 
 - **ใช้ไฟล์เดียว:** [`dist/pid-tuner.html`](dist/pid-tuner.html) ดาวน์โหลดแล้วดับเบิลคลิกเปิดใน Chrome/Edge ได้เลย ไม่ต้องติดตั้งอะไร
