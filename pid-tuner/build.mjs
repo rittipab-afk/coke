@@ -27,10 +27,22 @@ const scripts = [
 ].join('\n');
 const out = html.slice(0, start) + scripts + html.slice(end + '<!-- /SCRIPTS -->'.length);
 
-// offline guarantee: no external resources
-const external = out.match(/(?:src|href)\s*=\s*["']\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\/|@import|fetch\(|XMLHttpRequest|WebSocket|sendBeacon/gi);
-if (external) throw new Error('External resource / network call found: ' + [...new Set(external)].join(', '));
+// No page may load resources from outside the file (no CDN, fonts, images, stylesheets).
+const EXTERNAL_RESOURCE = /(?:src|href)\s*=\s*["']\s*(?:https?:)?\/\/|url\(\s*["']?\s*(?:https?:)?\/\/|@import/gi;
+// The tuner itself must never talk to the network: plant data stays on the machine.
+const NETWORK_CALL = /fetch\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource/gi;
+function assertClean(name, html, allowNetwork) {
+  const hits = [...(html.match(EXTERNAL_RESOURCE) || []), ...(allowNetwork ? [] : html.match(NETWORK_CALL) || [])];
+  if (hits.length) throw new Error(`${name}: external resource / network call found: ${[...new Set(hits)].join(', ')}`);
+}
 
 mkdirSync(join(root, 'dist'), { recursive: true });
+assertClean('pid-tuner.html', out, false);
 writeFileSync(join(root, 'dist', 'pid-tuner.html'), out);
 console.log(`dist/pid-tuner.html: ${(out.length / 1024).toFixed(0)} KB, ${samples.length} embedded samples`);
+
+// PI Web API check page: read-only GETs to the URL the user types, so fetch is allowed here only.
+const piCheck = src('pi-check.html');
+assertClean('pi-check.html', piCheck, true);
+writeFileSync(join(root, 'dist', 'pi-check.html'), piCheck);
+console.log(`dist/pi-check.html: ${(piCheck.length / 1024).toFixed(0)} KB`);

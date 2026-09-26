@@ -42,6 +42,16 @@ Web app ไฟล์เดียวสำหรับวิเคราะห์
 - temperature (วันที่แบบ พ.ศ.)
 - level
 
+## เช็ก PI Web API (ก่อนทำฟีเจอร์ดึงข้อมูลจาก PI อัตโนมัติ)
+
+[`dist/pi-check.html`](dist/pi-check.html) เป็นหน้าเช็กแยกไฟล์ ใช้เปิดบนเครื่องที่ต่อ network โรงงาน
+- กรอก URL เช่น `https://ชื่อserver/piwebapi`, วิธี login และ tag ทดสอบ แล้วกด **เริ่มตรวจ**
+- หน้าจะตรวจทีละขั้น: ติดต่อ server → CORS และ login → เวอร์ชัน/user → รายชื่อ Data Server → หา tag → อ่านข้อมูล 10 นาทีล่าสุด
+- ถ้าไม่ผ่าน จะบอกว่าติดขั้นไหนและควรทำอะไรต่อ
+- ปุ่ม **Copy ผลสำหรับส่ง IT** ให้ข้อความสรุป ถ้าติด CORS จะรวมค่าที่ต้องขอ PI admin ตั้งไว้ด้วย (`CorsOrigins`, `CorsSupportsCredentials`, `CorsHeaders`)
+- อ่านอย่างเดียว (GET) และส่ง request ไปเฉพาะ URL ที่กรอก password ไม่ถูกบันทึก
+- แอปหลัก `pid-tuner.html` ยังไม่มีการเรียก network เลย (build ตรวจให้ทุกครั้ง)
+
 ## สมมติฐานที่ต้อง verify กับ manual CENTUM หรือ control engineer
 
 - คำนวณแบบ ideal (non-interacting) PID: `MV = (100/PB)·[e + (1/TI)∫e dt + TD·de/dt]` โดย e เป็น %span และ MV เป็น %
@@ -57,6 +67,7 @@ node pid-tuner/tools/gen-samples.mjs      # สร้าง samples/*.csv ให
 node --test pid-tuner/test/*.test.mjs     # unit tests (parse, fit, tuning, margins, health)
 node pid-tuner/build.mjs                  # รวม src/ + samples → dist/pid-tuner.html
 node pid-tuner/test/e2e.browser.mjs [dir] # browser test ด้วย Playwright + screenshot
+node pid-tuner/test/e2e.picheck.mjs [dir] # pi-check กับ mock PI Web API
 ```
 
 | ไฟล์ | หน้าที่ |
