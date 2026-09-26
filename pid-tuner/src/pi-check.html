@@ -321,9 +321,12 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 18px; }
     const r2 = await get('');
     if (r2.status === 0) {
       const authHint = cfg.auth === 'windows' ? ' หรือ login ไม่ผ่านแล้ว server ไม่ส่ง CORS header กลับมา' : '';
-      set('cors', 'bad', `browser บล็อกการอ่านข้อมูล (CORS): server ตอบแต่ไม่อนุญาต origin "${pageOrigin}"${authHint}`, {
+      set('cors', 'bad', `server ตอบกลับ แต่ browser ไม่ให้อ่านผล เป็นได้ 2 กรณี: (ก) ไม่มี PI Web API ที่ URL นี้ (เช่น server ตอบ 404) หรือ (ข) มี PI Web API แต่ไม่อนุญาต origin "${pageOrigin}" (CORS)${authHint}`, {
         ms: r2.ms, cors: true,
-        next: 'ต้องให้ PI admin ตั้งค่า CORS ของ PI Web API (กด "Copy ผลสำหรับส่ง IT" ด้านล่างจะมีรายละเอียดที่ต้องขอ) ลองเปิด URL ใน tab ใหม่ ถ้าเห็น JSON แปลว่า server และ login ปกติ ติดแค่ CORS',
+        html: `<p>server ตอบกลับ แต่ browser ไม่ให้หน้านี้อ่านผล เป็นได้ 2 กรณี:</p><ul>
+          <li><b>ไม่มี PI Web API ที่ URL นี้</b> เช่น server ตอบ 404 (เจอบ่อยเมื่อใส่ชื่อเครื่อง PI Vision)</li>
+          <li><b>มี PI Web API แต่ติด CORS</b> คือไม่อนุญาต origin "${esc(pageOrigin)}"${esc(authHint)}</li></ul>`,
+        next: 'แยกกรณีโดยเปิด URL นี้ใน tab ใหม่: ถ้าเห็น JSON ที่มีคำว่า "Links" = ติด CORS ให้กด "Copy ผลสำหรับส่ง IT" · ถ้าเห็น 404 = ไม่มี PI Web API ที่ URL นี้ ให้ถาม IT ว่า PI Web API อยู่ที่ URL ไหน',
       });
       return skipRest('system', 'ข้ามเพราะ browser ไม่ให้อ่านข้อมูล');
     }
@@ -445,7 +448,7 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 18px; }
     else if (f) {
       cls = 'bad';
       msg = `<b>ติดที่ขั้น ${esc(f.title)}</b>`;
-      if (results.cors && results.cors.cors) msg += ' ต้องขอ IT ตั้งค่า CORS ใน PI Web API ก่อน ระหว่างนี้ใช้ CSV/paste จาก PI DataLink ไปก่อนได้';
+      if (results.cors && results.cors.cors) msg += ' เปิด URL ใน tab ใหม่เพื่อแยกว่า "ไม่มี PI Web API ที่ URL นี้" (404) หรือ "ติด CORS" (เห็น JSON) ระหว่างนี้ใช้ CSV/paste จาก PI DataLink ไปก่อนได้';
     } else { cls = 'warn'; msg = 'ตรวจยังไม่ครบ (ยังไม่ได้ทดสอบอ่าน tag) กรอก tag แล้วกดตรวจอีกครั้ง'; }
     $('#summary').innerHTML = `<div class="summary ${cls}">${msg}</div>`;
   }
@@ -469,7 +472,8 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 18px; }
     }
     if (results.cors && results.cors.cors) {
       L.push('');
-      L.push('Request to PI admin — please allow CORS for this tool in PI Web API configuration:');
+      L.push('Note: the server answered but the browser could not read the response. Either there is no PI Web API at this URL (e.g. HTTP 404), or CORS is not allowed.');
+      L.push('If PI Web API is at this URL, please allow CORS for this tool in PI Web API configuration:');
       L.push(`- CorsOrigins: include "${pageOrigin}"${pageOrigin === 'null' ? ' (page opened as a local file), or host the file on an approved internal web server and allow that origin' : ''}`);
       L.push('- CorsMethods: GET');
       if (cfg.auth === 'windows') L.push('- CorsSupportsCredentials: true (Windows/Kerberos authentication)');

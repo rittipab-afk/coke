@@ -75,7 +75,7 @@ async function scenario(name, port, { tag = 'FIC101.PV', auth = 'windows', color
 {
   const r = await scenario('nocors', mocks.ports.nocors);
   check(r.status.reach === 'good' && r.status.cors === 'bad', `nocors: reach ok, CORS fails (${JSON.stringify(r.status)})`);
-  check(r.text.includes('CORS') && r.text.includes('"null"'), 'nocors: explains CORS and origin null');
+  check(r.text.includes('CORS') && r.text.includes('"null"') && r.text.includes('ไม่มี PI Web API ที่ URL นี้'), 'nocors: explains both 404-without-CORS and CORS cases');
   check(r.report.includes('CorsOrigins: include "null"') && r.report.includes('CorsSupportsCredentials: true'), 'nocors: IT report lists CORS settings');
   check(r.status.data === 'skip', 'nocors: later steps skipped');
   await r.ctx.close();
