@@ -156,6 +156,31 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
   await page.close();
 }
 
+// ── 5b. real DataLink copy: note cell in header, trailing empty cells, "Tag not found" in MODE, SV = 0
+{
+  const { page, errors } = await run({ name: 'realcopy' });
+  const H = ['PV', 'SV', 'MV', 'MODE'].map((x) => `\\\\GCMPPISVR\\3-CTA.2M.3AC1101B.${x}`);
+  const lines = [['Timestamp', ...H, '← แถว 1 คือชื่อ tag', ''].join('\t')];
+  const t0 = Date.UTC(2026, 8, 26, 7, 36, 49);
+  const p2 = (v) => String(v).padStart(2, '0');
+  for (let i = 0; i < 600; i++) {
+    const d = new Date(t0 + i * 1000);
+    const ts = `26-Sep-26 ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}`;
+    lines.push([ts, (56 + Math.sin(i / 30)).toFixed(5), '0', '19.17407036', i < 2 ? 'Tag not found' : '', '', ''].join('\t'));
+  }
+  await page.evaluate((t) => {
+    const dt = new DataTransfer(); dt.setData('text/plain', t);
+    document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
+  }, lines.join('\r\n'));
+  await page.waitForSelector('#overviewCard:not([hidden])');
+  check(await page.inputValue('#cfgTag') === '3-CTA.2M.3AC1101B', `real copy: tag from header (${await page.inputValue('#cfgTag')})`);
+  check((await page.textContent('#dataInfo')).includes('600 จุด'), 'real copy: no rows lost to header detection');
+  const warn = await page.textContent('#dataWarn');
+  check(warn.includes('Tag not found') && warn.includes('SP/SV คงที่'), 'real copy: MODE ignored and constant SV flagged');
+  check(errors.length === 0, `no console errors (${errors.join(' | ')})`);
+  await page.close();
+}
+
 // ── 6. paste path with a semicolon/decimal-comma table
 {
   const { page, errors } = await run({ name: 'paste' });

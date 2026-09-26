@@ -188,7 +188,12 @@
     text = String(text || '').replace(/^﻿/, '');
     const delimiter = detectDelimiter(text);
     const rawLines = text.split(/\r?\n/).filter((l) => l.trim());
-    const lines = rawLines.map((l) => splitLine(l, delimiter));
+    // Excel copies a full rectangle, so rows carry trailing empty cells; drop them.
+    const lines = rawLines.map((l) => {
+      const r = splitLine(l, delimiter);
+      while (r.length > 1 && r[r.length - 1] === '') r.pop();
+      return r;
+    });
     // decimal comma: only possible when the delimiter is not a comma
     let decimalComma = false;
     if (delimiter !== ',') {
@@ -201,13 +206,14 @@
     }
     const isDataField = (f) => isNum(parseNumber(f, decimalComma)) || isNum(parseTimestamp(f, 'DMY'));
     // first row where most fields are numbers/timestamps = data start
-    let start = 0;
-    for (; start < Math.min(lines.length, 30); start++) {
-      const row = lines[start];
-      const ok = row.filter(isDataField).length;
-      if (row.length > 1 && ok >= Math.max(2, Math.ceil(row.length * 0.6))) break;
+    // (judged on non-empty cells, so blank or text cells such as "Tag not found" do not hide a data row)
+    let start = -1;
+    for (let i = 0; i < Math.min(lines.length, 30); i++) {
+      const cells = lines[i].filter((f) => f !== '');
+      const ok = cells.filter(isDataField).length;
+      if (cells.length > 1 && ok >= Math.max(2, Math.ceil(cells.length * 0.6))) { start = i; break; }
     }
-    if (start >= lines.length) start = 0;
+    if (start < 0) start = 0;
     const width = Math.max(...lines.slice(start, start + 50).map((r) => r.length), 1);
     let headers;
     if (start > 0) {

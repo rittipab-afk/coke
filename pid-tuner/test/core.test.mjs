@@ -110,6 +110,22 @@ test('guessColumns: full PI paths in headers (\\\\SERVER\\area.loop.PV)', () => 
   assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 1, 2, 3, 4]);
 });
 
+test('parseTable: real DataLink copy (note in header row, trailing empty cells, "Tag not found")', () => {
+  const H = ['PV', 'SV', 'MV', 'MODE'].map((x) => `\\\\GCMPPISVR\\3-CTA.2M.3AC1101B.${x}`);
+  const lines = [['Timestamp', ...H, '← แถว 1 คือชื่อ tag', ''].join('\t')];
+  for (let i = 0; i < 40; i++) {
+    const ts = `26-Sep-26 07:${String(36 + Math.floor((49 + i) / 60)).padStart(2, '0')}:${String((49 + i) % 60).padStart(2, '0')}`;
+    lines.push([ts, (56.07 + i / 1000).toFixed(5), '0', '19.17407036', i < 2 ? 'Tag not found' : '', '', ''].join('\t'));
+  }
+  const t = core.parseTable(lines.join('\r\n'));
+  assert.equal(t.headerRow, 0, 'header is the first row');
+  assert.equal(t.rows.length, 40, 'no data rows skipped');
+  assert.equal(t.headers.length, 5);
+  const m = core.guessColumns(t);
+  assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 1, 2, 3, 4]);
+  assert.equal(core.loopTagFromHeader(t.headers[m.pv]), '3-CTA.2M.3AC1101B');
+});
+
 test('MODE column with only "Tag not found" is ignored; constant SV is reported', () => {
   const rows = Array.from({ length: 30 }, (_, i) => `26-Sep-26 07:36:${String(i + 10)}\t${56 + i / 100}\t0\t19.17\t${i < 2 ? 'Tag not found' : ''}`);
   const t = core.parseTable(['Timestamp\tX.PV\tX.SV\tX.MV\tX.MODE', ...rows].join('\n'));
