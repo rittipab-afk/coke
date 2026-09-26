@@ -125,14 +125,29 @@
   fileIn.addEventListener('change', () => fileIn.files[0] && readFile(fileIn.files[0]));
   function readFile(f) {
     const r = new FileReader();
-    r.onload = () => loadText(String(r.result), f.name);
+    r.onload = () => loadText(String(r.result), f.name, { auto: true });
     r.onerror = () => msg('อ่านไฟล์ไม่ได้', true);
     r.readAsText(f);
   }
   $('#pasteBtn').addEventListener('click', () => {
     const t = $('#paste').value;
     if (!t.trim()) return msg('ยังไม่ได้ paste ข้อมูล', true);
-    loadText(t, 'ข้อมูลที่ paste');
+    loadText(t, 'ข้อมูลที่ paste', { auto: true });
+  });
+  // Ctrl+V anywhere on the page (outside form fields) loads the table straight away.
+  document.addEventListener('paste', (e) => {
+    const el = e.target;
+    const inField = el && el.closest && el.closest('input, select, textarea, [contenteditable]');
+    if (inField && el.id !== 'paste') return;
+    const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+    if (!text || text.split(/\r?\n/).filter((l) => l.trim()).length < 10) {
+      if (!inField) msg('ข้อมูลที่ paste มีน้อยเกินไป ให้ copy ทั้งตาราง (อย่างน้อย 10 แถว) จาก Excel', true);
+      return;
+    }
+    e.preventDefault();
+    $('#paste').value = '';
+    if (currentTab !== 'data') showTab('data');
+    loadText(text, 'ข้อมูลที่ paste', { auto: true });
   });
   const samples = window.PID_SAMPLES || [];
   const sampleSel = $('#sampleSel');
@@ -152,24 +167,34 @@
   });
   function msg(t, bad) { const el = $('#loadMsg'); el.textContent = t; el.style.color = bad ? 'var(--critical)' : ''; }
 
-  function loadText(text, name) {
+  function loadText(text, name, opts = {}) {
     let table;
     try { table = C.parseTable(text); } catch (e) { return msg('อ่านข้อมูลไม่ได้: ' + e.message, true); }
     if (table.rows.length < 10) return msg('ข้อมูลน้อยเกินไป (ต้องมีอย่างน้อย 10 แถว)', true);
     S.table = table; S.fileName = name;
     S.map = C.guessColumns(table);
-    const opts = ['<option value="-1">(ไม่มี)</option>'].concat(table.headers.map((h, i) => `<option value="${i}">${esc(h)}</option>`)).join('');
+    const label = (i) => (S.map.headerNames && S.map.headerNames[i]) || table.headers[i];
+    const options = ['<option value="-1">(ไม่มี)</option>'].concat(table.headers.map((h, i) => `<option value="${i}">${esc(label(i))}</option>`)).join('');
     for (const [id, key] of [['colTime', 'time'], ['colPV', 'pv'], ['colSP', 'sp'], ['colOP', 'op'], ['colMode', 'mode']]) {
-      $('#' + id).innerHTML = opts;
+      $('#' + id).innerHTML = options;
       $('#' + id).value = String(S.map[key]);
     }
     $('#dateOrder').value = C.detectDateOrder(table.rows.slice(0, 500).map((r) => r[S.map.time]));
     $('#mapCard').hidden = false;
     msg(`โหลด "${name}" แล้ว: ${table.rows.length.toLocaleString()} แถว, ${table.headers.length} คอลัมน์ (ตัวคั่น ${table.delimiter === '\t' ? 'tab' : `"${table.delimiter}"`}${table.decimalComma ? ', ทศนิยมแบบ comma' : ''})`);
-    const pvHead = table.headers[S.map.pv] || '';
+    const pvHead = label(S.map.pv) || '';
     const tag = pvHead.includes('.') ? pvHead.split('.')[0] : '';
     loadCfgFor(tag);
     rebuild();
+    if (!opts.auto || !S.rs) return;
+    if (!S.slGuessed && S.cfg.sh > S.cfg.sl) {
+      // known tag: settings remembered → go straight to the analysis
+      msg(`โหลด ${tag || 'ข้อมูล'} แล้ว ใช้ค่าตั้ง loop ที่จำไว้ (แก้ได้ใน Tab 1)`);
+      showTab('health');
+    } else {
+      $('#cfgCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('#cfgHint').textContent = `ครั้งแรกของ ${tag || 'tag นี้'}: กรอก SL/SH และ PB/TI/TD จากหน้า tuning บน DCS ครั้งเดียว แอปจะจำไว้ ครั้งหน้า paste แล้วไปหน้าวิเคราะห์ได้ทันที`;
+    }
   }
   ['colTime', 'colPV', 'colSP', 'colOP', 'colMode', 'dateOrder'].forEach((id) => $('#' + id).addEventListener('change', () => {
     S.map = { time: +$('#colTime').value, pv: +$('#colPV').value, sp: +$('#colSP').value, op: +$('#colOP').value, mode: +$('#colMode').value };

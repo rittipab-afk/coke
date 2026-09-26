@@ -223,42 +223,60 @@
   }
 
   /** Guess column roles from header names (CENTUM uses SV for setpoint and MV for output). */
+  /**
+   * Guess column roles. Handles the usual layouts from PI DataLink / Excel:
+   *  - Timestamp | PV | SV | MV | MODE (names in the header)
+   *  - one timestamp column per tag (Time | PV | Time | SV | ...), header names possibly misaligned
+   *  - no header at all (order PV, SV, MV; MODE found from its AUT/MAN/CAS values)
+   * CENTUM names: SV = setpoint, MV = output.
+   */
   function guessColumns(table) {
-    const h = table.headers.map((x) => x.toUpperCase());
+    const width = table.headers.length;
     const sample = table.rows.slice(0, 50);
-    const pick = (re, exclude = []) => {
-      const i = h.findIndex((x, i) => re.test(x) && !exclude.includes(i));
-      return i;
-    };
-    let time = -1;
-    for (let c = 0; c < h.length; c++) {
-      const vals = sample.map((r) => r[c]).filter((v) => v != null && v !== '');
+    const colVals = (c) => sample.map((r) => r[c]).filter((v) => v != null && v !== '');
+    const frac = (vals, f) => (vals.length ? vals.filter(f).length / vals.length : 0);
+    const kind = [];
+    for (let c = 0; c < width; c++) {
+      const vals = colVals(c);
       const order = detectDateOrder(vals);
-      const ok = vals.filter((v) => isNum(parseTimestamp(v, order))).length;
-      const numeric = vals.filter((v) => isNum(parseNumber(v, table.decimalComma))).length;
-      const nameLike = /TIME|DATE|เวลา|วันที่/.test(h[c]);
-      if (vals.length && ok / vals.length > 0.8 && (nameLike || numeric / vals.length < 0.5 || numericLooksLikeTime(vals))) { time = c; break; }
+      const tsFrac = frac(vals, (v) => isNum(parseTimestamp(v, order)));
+      const numFrac = frac(vals, (v) => isNum(parseNumber(v, table.decimalComma)));
+      const modeFrac = frac(vals, (v) => modeClass(v) !== null);
+      const nameLike = /TIME|DATE|เวลา|วันที่/i.test(table.headers[c]);
+      if (!vals.length) kind.push('empty');
+      else if (tsFrac > 0.8 && (nameLike || numFrac < 0.5 || numericLooksLikeTime(vals))) kind.push('time');
+      else if (numFrac > 0.5) kind.push('num');
+      else if (modeFrac > 0.5) kind.push('mode');
+      else kind.push('text');
     }
-    const used = [time];
-    const pv = pick(/(\.|\b|_)PV\b|PROCESS\s*VALUE/, used); used.push(pv);
-    const sp = pick(/(\.|\b|_)(SV|SP)\b|SET\s*POINT|SETPOINT/, used); used.push(sp);
-    const op = pick(/(\.|\b|_)(MV|OP|OUT)\b|OUTPUT/, used); used.push(op);
-    const mode = pick(/MODE/, used);
-    // fallback: remaining numeric columns in order PV, SP, OP
-    const numericCols = [];
-    for (let c = 0; c < h.length; c++) {
-      if (c === time) continue;
-      const vals = sample.map((r) => r[c]);
-      if (vals.filter((v) => isNum(parseNumber(v, table.decimalComma))).length > vals.length * 0.5) numericCols.push(c);
+    const time = kind.indexOf('time');
+    const valueCols = kind.map((k, c) => (k === 'num' || k === 'mode' ? c : -1)).filter((c) => c >= 0);
+
+    // Header names to use for value columns. With one timestamp column per tag the typed names
+    // usually do not line up with the data, so re-assign the tag-like names to value columns in order.
+    let names = table.headers.slice();
+    if (kind.filter((k) => k === 'time').length > 1) {
+      const tagNames = table.headers.filter((x) => x && !/^COL\d+$/i.test(x) && !/TIME|DATE|เวลา|วันที่/i.test(x));
+      names = new Array(width).fill('');
+      if (tagNames.length === valueCols.length) valueCols.forEach((c, k) => { names[c] = tagNames[k]; });
     }
-    const rest = numericCols.filter((c) => ![pv, sp, op].includes(c));
-    return {
-      time,
-      pv: pv >= 0 ? pv : rest.shift() ?? -1,
-      sp: sp >= 0 ? sp : rest.shift() ?? -1,
-      op: op >= 0 ? op : rest.shift() ?? -1,
-      mode,
+    const used = new Set([time]);
+    const pick = (re, want) => {
+      const c = names.findIndex((x, i) => re.test(x.toUpperCase()) && !used.has(i) && want.includes(kind[i]));
+      if (c >= 0) used.add(c);
+      return c;
     };
+    let pv = pick(/(\.|\b|_)PV\b|PROCESS\s*VALUE/, ['num']);
+    let sp = pick(/(\.|\b|_)(SV|SP)\b|SET\s*POINT|SETPOINT/, ['num']);
+    let op = pick(/(\.|\b|_)(MV|OP|OUT)\b|OUTPUT/, ['num']);
+    let mode = pick(/MODE/, ['mode', 'text']);
+    if (mode < 0) { mode = kind.findIndex((k, i) => k === 'mode' && !used.has(i)); if (mode >= 0) used.add(mode); }
+    // fallback: remaining numeric columns in order PV, SV, MV
+    const rest = kind.map((k, c) => (k === 'num' && !used.has(c) ? c : -1)).filter((c) => c >= 0);
+    if (pv < 0) pv = rest.shift() ?? -1;
+    if (sp < 0) sp = rest.shift() ?? -1;
+    if (op < 0) op = rest.shift() ?? -1;
+    return { time, pv, sp, op, mode, headerNames: names };
   }
   function numericLooksLikeTime(vals) {
     const n = vals.map(Number).filter(isNum);

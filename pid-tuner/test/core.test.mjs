@@ -60,7 +60,7 @@ test('parseTable: semicolon + decimal comma, preamble rows, column guessing', ()
   assert.equal(t.decimalComma, true);
   assert.equal(t.rows.length, 3);
   const map = core.guessColumns(t);
-  assert.deepEqual(map, { time: 0, pv: 1, sp: 2, op: 3, mode: 4 });
+  assert.deepEqual([map.time, map.pv, map.sp, map.op, map.mode], [0, 1, 2, 3, 4]);
   const ds = core.buildDataset(t, map);
   assert.equal(ds.t.length, 3);
   assert.equal(ds.pv[0], 12.5);
@@ -74,7 +74,34 @@ test('parseTable: tab-separated paste from Excel', () => {
   const txt = 'Timestamp\tPV\tSP\tOP\n2026-09-25 10:00:00\t1\t2\t3\n2026-09-25 10:00:05\t1.5\t2\t3.5\n';
   const t = core.parseTable(txt);
   assert.equal(t.delimiter, '\t');
-  assert.deepEqual(core.guessColumns(t), { time: 0, pv: 1, sp: 2, op: 3, mode: -1 });
+  const m = core.guessColumns(t);
+  assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 1, 2, 3, -1]);
+});
+
+test('guessColumns: PI DataLink layout with one timestamp column per tag', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => {
+    const ts = `25-Sep-26 10:00:${String(i).padStart(2, '0')}`;
+    return [ts, 50 + i / 10, ts, 50, ts, 40 + i / 10, ts, i < 6 ? 'AUT' : 'MAN'].join('\t');
+  });
+  const t = core.parseTable(['Timestamp\t3AC1102B.PV\t3AC1102B.SV\t3AC1102B.MV\t3AC1102B.MODE', ...rows].join('\n'));
+  const m = core.guessColumns(t);
+  assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 1, 3, 5, 7]);
+  assert.equal(m.headerNames[1], '3AC1102B.PV', 'typed tag names re-assigned to value columns');
+  const ds = core.buildDataset(t, m);
+  assert.equal(ds.op[11], 41.1);
+  assert.equal(ds.mode[11], 'MAN');
+});
+
+test('guessColumns: no header row → order PV, SV, MV and MODE by value', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => `2026-09-25 10:00:${String(i).padStart(2, '0')}\t${50 + i}\t50\t${40 + i}\tCAS`);
+  const m = core.guessColumns(core.parseTable(rows.join('\n')));
+  assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 1, 2, 3, 4]);
+});
+
+test('guessColumns: named columns in any order are matched by name', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => `2026-09-25 10:00:${String(i).padStart(2, '0')},AUT,${40 + i},50,${50 + i}`);
+  const m = core.guessColumns(core.parseTable(['Time,X.MODE,X.MV,X.SV,X.PV', ...rows].join('\n')));
+  assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 4, 3, 2, 1]);
 });
 
 test('resample fills a uniform grid and marks long gaps as NaN', () => {
