@@ -29,7 +29,8 @@ Web app ไฟล์เดียวสำหรับวิเคราะห์
 
 1. ใน Excel ใช้ PI DataLink → Sampled Data ดึง `XXX.PV`, `XXX.SV`, `XXX.MV`, `XXX.MODE`
    - ใช้ template [`excel/PI_Tuner_Template.xlsx`](excel/PI_Tuner_Template.xlsx) ได้ (มีขั้นตอนในแท็บ HowTo)
-   - ตั้ง Sampled Data ครั้งแรกครั้งเดียว ครั้งต่อไปแค่เปลี่ยนชื่อ loop ที่ `Setup!B4`
+   - template สร้างชื่อ tag เต็มแบบ DataLink ให้ เช่น `\\GCMPPISVR\3-CTA.2M.3AC1102B.MV` (PI server + area prefix + loop + suffix)
+   - ตั้ง Sampled Data ครั้งแรกครั้งเดียว ครั้งต่อไปแค่เปลี่ยนชื่อ loop ที่ `Setup!B6`
 2. เลือกทั้งตาราง แล้ว **Ctrl+C**
 3. เปิดแอป แล้วกด **Ctrl+V** ที่หน้าไหนก็ได้
 

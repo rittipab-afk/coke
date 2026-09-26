@@ -152,7 +152,7 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 18px; }
       <label class="basic" hidden>Username<input id="user" placeholder="DOMAIN\user" spellcheck="false"></label>
       <label class="basic" hidden>Password<input id="pass" type="password"></label>
       <label>PI Data Server<input id="server" list="serverList" placeholder="เว้นว่าง = ใช้ตัวแรกที่พบ" spellcheck="false"><datalist id="serverList"></datalist></label>
-      <label>Tag ทดสอบ<input id="tag" placeholder="เช่น FIC101.PV" spellcheck="false"></label>
+      <label>Tag ทดสอบ<input id="tag" placeholder="เช่น 3-CTA.2M.3AC1102B.MV หรือ \\SERVER\tag" spellcheck="false"></label>
       <div class="row wide" style="grid-column:1/-1">
         <button class="btn primary" id="runBtn" type="submit">เริ่มตรวจ</button>
         <span class="hint" id="originInfo"></span>
@@ -286,6 +286,9 @@ footer { color: var(--text-muted); font-size: 12px; margin-top: 18px; }
       server: $('#server').value.trim(), tag: $('#tag').value.trim(),
     };
     if (!cfg.base) { $('#url').focus(); return; }
+    // accept the PI DataLink form \\SERVER\tag in the tag box
+    const full = /^\\\\([^\\]+)\\(.+)$/.exec(cfg.tag);
+    if (full) { cfg.server = full[1]; cfg.tag = full[2]; $('#server').value = cfg.server; $('#tag').value = cfg.tag; }
     $('#url').value = cfg.base;
     store.set('picheck:form', { url: cfg.base, auth: cfg.auth, user: cfg.user, server: cfg.server, tag: cfg.tag });
     results = {};

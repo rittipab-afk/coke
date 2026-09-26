@@ -278,6 +278,22 @@
     if (op < 0) op = rest.shift() ?? -1;
     return { time, pv, sp, op, mode, headerNames: names };
   }
+  /**
+   * Loop tag from a column header. Accepts plain names and PI DataLink paths:
+   *   "FIC101.PV" → "FIC101"
+   *   "\\GCMPPISVR\3-CTA.2M.3AC1102B.MV" → "3-CTA.2M.3AC1102B"
+   */
+  function loopTagFromHeader(h) {
+    let t = String(h || '').trim();
+    if (t.includes('\\')) t = t.slice(t.lastIndexOf('\\') + 1); // drop \\server\ prefix
+    const m = /^(.*)\.(PV|SV|SP|MV|OP|OUT|MODE)$/i.exec(t);
+    return m ? m[1] : t.includes('.') ? t.slice(0, t.lastIndexOf('.')) : '';
+  }
+  /** Loop type from the instrument letters of the last tag segment (3FIC101 → flow, LIC → level ...). */
+  function guessLoopType(tag) {
+    const seg = String(tag || '').split('.').pop().replace(/^[\d-]+/, '').toUpperCase();
+    return { F: 'flow', P: 'pressure', T: 'temperature', L: 'level' }[seg[0]] || 'flow';
+  }
   function numericLooksLikeTime(vals) {
     const n = vals.map(Number).filter(isNum);
     return n.length > 0 && n.every((v) => (v > 20000 && v < 80000) || v > 1e8);
@@ -1128,6 +1144,7 @@
     mean, std, median, minmax, diffNoise, fmtDuration,
     // parsing
     detectDelimiter, splitLine, parseNumber, parseTimestamp, detectDateOrder, parseTable, guessColumns,
+    loopTagFromHeader, guessLoopType,
     buildDataset, resample, compressionCheck, modeClass,
     // correlation
     fft, acf, ccf,

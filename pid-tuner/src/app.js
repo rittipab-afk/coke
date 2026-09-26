@@ -183,7 +183,7 @@
     $('#mapCard').hidden = false;
     msg(`โหลด "${name}" แล้ว: ${table.rows.length.toLocaleString()} แถว, ${table.headers.length} คอลัมน์ (ตัวคั่น ${table.delimiter === '\t' ? 'tab' : `"${table.delimiter}"`}${table.decimalComma ? ', ทศนิยมแบบ comma' : ''})`);
     const pvHead = label(S.map.pv) || '';
-    const tag = pvHead.includes('.') ? pvHead.split('.')[0] : '';
+    const tag = C.loopTagFromHeader(pvHead);
     loadCfgFor(tag);
     rebuild();
     if (!opts.auto || !S.rs) return;
@@ -241,7 +241,7 @@
   const numKeys = ['sl', 'sh', 'PB', 'TI', 'TD', 'Ts'];
   function loadCfgFor(tag) {
     const saved = (tag && store.get('pidtuner:cfg:' + tag)) || null;
-    const type = /^L/i.test(tag) ? 'level' : /^T/i.test(tag) ? 'temperature' : /^P/i.test(tag) ? 'pressure' : 'flow';
+    const type = C.guessLoopType(tag);
     const c = saved || { tag, loopType: type, sl: '', sh: '', unit: '', PB: '', TI: '', TD: '', Ts: 1, alg: 'pid', act: '' };
     for (const [k, id] of Object.entries(cfgIds)) $('#' + id).value = c[k] ?? '';
     S.slGuessed = !saved || c.sl === '' || c.sh === '';

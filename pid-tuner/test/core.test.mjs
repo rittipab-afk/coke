@@ -92,6 +92,24 @@ test('guessColumns: PI DataLink layout with one timestamp column per tag', () =>
   assert.equal(ds.mode[11], 'MAN');
 });
 
+test('loop tag and type from PI DataLink headers', () => {
+  assert.equal(core.loopTagFromHeader('\\\\GCMPPISVR\\3-CTA.2M.3AC1102B.MV'), '3-CTA.2M.3AC1102B');
+  assert.equal(core.loopTagFromHeader('FIC101.PV'), 'FIC101');
+  assert.equal(core.loopTagFromHeader('3-CTA.2M.3LIC0501.MODE'), '3-CTA.2M.3LIC0501');
+  assert.equal(core.loopTagFromHeader('Col2'), '');
+  assert.equal(core.guessLoopType('3-CTA.2M.3LIC0501'), 'level');
+  assert.equal(core.guessLoopType('3-CTA.2M.3TIC0101'), 'temperature');
+  assert.equal(core.guessLoopType('PIC201'), 'pressure');
+  assert.equal(core.guessLoopType('3-CTA.2M.3AC1102B'), 'flow', 'unknown letters default to flow');
+});
+
+test('guessColumns: full PI paths in headers (\\\\SERVER\\area.loop.PV)', () => {
+  const H = ['PV', 'SV', 'MV', 'MODE'].map((x) => `\\\\GCMPPISVR\\3-CTA.2M.3AC1102B.${x}`);
+  const rows = Array.from({ length: 12 }, (_, i) => `25-Sep-26 10:00:${String(i).padStart(2, '0')}\t${50 + i}\t50\t${40 + i}\tAUT`);
+  const m = core.guessColumns(core.parseTable([['Timestamp', ...H].join('\t'), ...rows].join('\n')));
+  assert.deepEqual([m.time, m.pv, m.sp, m.op, m.mode], [0, 1, 2, 3, 4]);
+});
+
 test('guessColumns: no header row → order PV, SV, MV and MODE by value', () => {
   const rows = Array.from({ length: 12 }, (_, i) => `2026-09-25 10:00:${String(i).padStart(2, '0')}\t${50 + i}\t50\t${40 + i}\tCAS`);
   const m = core.guessColumns(core.parseTable(rows.join('\n')));

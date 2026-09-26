@@ -105,6 +105,13 @@ async function scenario(name, port, { tag = 'FIC101.PV', auth = 'windows', color
   await r.ctx.close();
 }
 
+// a3) full DataLink path in the tag box → server and tag split out
+{
+  const r = await scenario('fullpath', mocks.ports.ok, { tag: '\\\\MOCKPI01\\FIC101.PV' });
+  check(r.status.tag === 'good' && await r.page.inputValue('#tag') === 'FIC101.PV' && await r.page.inputValue('#server') === 'MOCKPI01', 'fullpath: \\\\SERVER\\tag accepted');
+  await r.ctx.close();
+}
+
 // e) closed port
 {
   const r = await scenario('closed', mocks.ports.closed, { viewport: { width: 390, height: 844 } });

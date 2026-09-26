@@ -133,7 +133,8 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
   const { page, errors } = await run({ name: 'ctrlv' });
   const src = readFileSync(join(root, 'samples', 'flow_sticky_valve.csv'), 'utf8').trim().split('\n').slice(1, 1201);
   const rows = src.map((l) => { const [t, pv, sv, mv, mode] = l.split(','); return [t, pv, t, sv, t, mv, t, mode].join('\t'); });
-  const text = ['Timestamp\t3AC1102B.PV\t3AC1102B.SV\t3AC1102B.MV\t3AC1102B.MODE', ...rows].join('\n');
+  const hdr = ['PV', 'SV', 'MV', 'MODE'].map((x) => `\\\\GCMPPISVR\\3-CTA.2M.3AC1102B.${x}`);
+  const text = [['Timestamp', ...hdr].join('\t'), ...rows].join('\n');
   const paste = () => page.evaluate((t) => {
     const dt = new DataTransfer();
     dt.setData('text/plain', t);
@@ -141,7 +142,7 @@ for (const [i, name, re] of [[3, 'temperature', /Dead time θ\s*([\d.]+)/], [4, 
   }, text);
   await paste();
   await page.waitForSelector('#overviewCard:not([hidden])');
-  check(await page.inputValue('#cfgTag') === '3AC1102B', 'Ctrl+V: tag taken from DataLink header');
+  check(await page.inputValue('#cfgTag') === '3-CTA.2M.3AC1102B', `Ctrl+V: tag taken from \\\\SERVER\\ DataLink header (${await page.inputValue('#cfgTag')})`);
   check(await page.inputValue('#colOP') === '5' && await page.inputValue('#colMode') === '7', 'Ctrl+V: timestamp-per-tag layout mapped');
   check((await page.textContent('#cfgHint')).includes('ครั้งแรก'), 'Ctrl+V first time: asks for loop settings');
   await page.fill('#cfgSL', '0'); await page.fill('#cfgSH', '80'); await page.fill('#cfgPB', '250'); await page.fill('#cfgTI', '4');
